@@ -47,6 +47,7 @@ type Config struct {
 	PDFParser     PDFParserConfig    `mapstructure:"pdf_parser"`
 	Proxy         ProxyConfig        `mapstructure:"proxy"`
 	SmartSearch   SmartSearchConfig  `mapstructure:"smartsearch"`
+	Apipool       ApipoolConfig      `mapstructure:"apipool"`
 }
 
 // ── 各搜索引擎配置 ──
@@ -55,8 +56,8 @@ type BaiduConfig struct {
 	APIKey string   `mapstructure:"api_key"` // 百度千帆 AI Search API Key（单 key 时自动作为 sk_list）
 	SKList []string `mapstructure:"sk_list"` // 多 Key 轮询列表（优先级高于 api_key）
 	// 搜索模式配置
-	EnableAISearch   bool   `mapstructure:"enable_ai_search"`   // true=智能搜索 chat/completions，false=网页搜索 web_search（默认 true）
-	Model            string `mapstructure:"model"`               // 智能搜索模型名，默认 ernie-4.5-turbo-32k
+	EnableAISearch   bool   `mapstructure:"enable_ai_search"`   // true=智能搜索 chat/completions（默认），false=网页搜索 web_search；不传 model 不产生 LLM 费用
+	Model            string `mapstructure:"model"`               // 智能搜索模型名，不传时走免费百度搜索（不产生 LLM 费用），传入模型名启用 LLM 智能搜索
 	SearchSource     string `mapstructure:"search_source"`       // 搜索引擎版本，默认 baidu_search_v2
 	EnableReasoning  bool   `mapstructure:"enable_reasoning"`    // 深度思考（默认 false）
 	EnableDeepSearch bool   `mapstructure:"enable_deep_search"`  // 深搜索（默认 false）
@@ -154,6 +155,8 @@ type CleanFetchConfig struct {
 	MaxInlineChars int    `mapstructure:"max_inline_chars"` // 内联返回最大字符数（默认 0 = 不限）
 	TimeoutSec     int    `mapstructure:"timeout_sec"`      // 单次请求超时（秒），默认 30
 	MaxFetchSizeMB int    `mapstructure:"max_fetch_size_mb"` // 最大抓取文件大小（MB），HEAD 预检用，默认 10
+	UseSystemProxy bool   `mapstructure:"use_system_proxy"` // 自动使用系统代理（默认 false）
+	MaxRetries     int    `mapstructure:"max_retries"`       // 最大重试次数（默认 3）
 }
 
 // ── PDF 解析配置 ──
@@ -300,6 +303,30 @@ type SmartSearchConfig struct {
 type SmartSearchEngine struct {
 	MinScore float64 `mapstructure:"min_score"` // 最低相关性分数阈值，0 = 不过滤；引擎不支持 score 时忽略
 	MaxSize  int     `mapstructure:"max_size"`  // 单引擎最大结果数，0 = 使用默认值 4
+}
+
+// ApipoolConfig apipool 模式配置。
+type ApipoolConfig struct {
+	Strategy string   `mapstructure:"strategy"` // "round-robin"(默认) / "priority"
+	Engines  []string `mapstructure:"engines"`  // 供应商优先级顺序（默认: baidu, tavily, exa）
+}
+
+// GetApipoolStrategy 返回 apipool 策略，默认 round-robin。
+func (c ApipoolConfig) GetStrategy() string {
+	switch strings.ToLower(c.Strategy) {
+	case "priority":
+		return "priority"
+	default:
+		return "round-robin"
+	}
+}
+
+// GetEngines 返回供应商顺序，默认 baidu → tavily → exa。
+func (c ApipoolConfig) GetEngines() []string {
+	if len(c.Engines) > 0 {
+		return c.Engines
+	}
+	return []string{"baidu", "tavily", "exa"}
 }
 
 // ── Config 方法 ──
@@ -469,12 +496,16 @@ func Load(configPath string) (*Config, error) {
 		conf.CleanFetch.MaxFetchSizeMB = 10
 	}
 
+	if conf.CleanFetch.MaxRetries <= 0 {
+		conf.CleanFetch.MaxRetries = 3
+	}
+
 	// 代理：标记用户显式禁用（enabled: false），跳过自动检测
 	if viper.IsSet("proxy.enabled") && !viper.GetBool("proxy.enabled") {
 		conf.Proxy.autoDisabled = true
 	}
 
-	// 百度 enable_ai_search 默认 true（智能搜索优先）
+	// 百度 enable_ai_search 默认 true（不传 model 时走免费搜索，不产生 LLM 费用）
 	if !viper.IsSet("baidu.enable_ai_search") {
 		conf.Baidu.EnableAISearch = true
 	}

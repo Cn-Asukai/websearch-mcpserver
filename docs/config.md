@@ -29,7 +29,7 @@ baidu:
   api_key: ""               # 环境变量: BAIDU_SK（sk_list 为空时自动作为单元素列表）
   sk_list: []               # 多 Key 轮询列表（优先级高于 api_key）
   enable_ai_search: true    # true=智能搜索 chat/completions（默认），false=网页搜索 web_search
-  model: "ernie-4.5-turbo-32k"     # 智能搜索模型名
+  model: ""                 # 智能搜索模型名，不传=免费搜索（不产生 LLM 费用），传入=LLM 智能搜索
   search_source: "baidu_search_v2" # 搜索引擎版本
   enable_reasoning: false   # 深度思考
   enable_deep_search: false # 深搜索
@@ -94,6 +94,8 @@ cleanfetch:
   file_ttl_hours: 24        # 临时文件保留时长（小时）
   max_inline_lines: 100     # 超过此行数存文件
   max_inline_chars: 0       # 超过此字符数存文件，0=不限
+  use_system_proxy: false   # 自动使用系统代理（环境变量+注册表），默认 false
+  max_retries: 3            # 最大重试次数（仅 429/502/503），默认 3
 
 # PDF 解析工具（默认关闭，独立于 cleanfetch）
 # MinerU AI 增强（可选）：有 Token 用精准 API（远程 URL，≤200MB），无 Token 用 Agent 轻量 API（本地文件，≤10MB）
@@ -134,6 +136,15 @@ pdf_parser:
 #       min_score: 0      # DuckDuckGo 不回传 score，此字段无效
 #       max_size: 4       # DuckDuckGo 单引擎最大结果数
 
+# Apipool 模式配置（可选，mode=apipool 时生效）
+# apipool:
+#   strategy: round-robin  # round-robin（默认）: 跨请求轮转起始供应商
+#                          # priority: 始终从第一个供应商开始
+#   engines:               # 供应商优先级顺序（默认 [baidu, tavily, exa]，百度网页搜索兜底始终在末尾）
+#     - baidu
+#     - tavily
+#     - exa
+
 # 日志滚动
 log:
   max_size: 1               # 单文件最大 MB
@@ -159,8 +170,10 @@ log:
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
 | `port` | 8338 | stop/kill/status 无配置时也用此端口 |
-| `mode` | baidu | 无 Key 时自动回退 engine；`apipool` 为 API Key 池轮转模式 |
-| `baidu.enable_ai_search` | true | true=智能搜索 chat/completions，false=网页搜索 web_search |
+| `mode` | baidu | 无 Key 时自动回退 engine；`apipool` 为 API Key 池轮转模式，支持 round-robin / priority 策略 |
+| `apipool.strategy` | round-robin | `round-robin` 跨请求轮转供应商 / `priority` 固定优先级顺序 |
+| `apipool.engines` | [baidu, tavily, exa] | 供应商优先级顺序，百度网页搜索兜底始终在末尾 |
+| `baidu.enable_ai_search` | true | true=智能搜索 chat/completions，false=网页搜索 web_search；不传 model 不产生 LLM 费用 |
 | `network` | china | |
 | `bing.enabled` | true | |
 | `bing.per_sec` | 1 | |
@@ -172,6 +185,8 @@ log:
 | `cleanfetch.enabled` | false | 旧配置不启用，需显式开启 |
 | `cleanfetch.file_ttl_hours` | 24 | |
 | `cleanfetch.max_inline_lines` | 100 | |
+| `cleanfetch.use_system_proxy` | false | 自动使用系统代理（环境变量+注册表） |
+| `cleanfetch.max_retries` | 3 | 仅对 429/502/503 重试 |
 | `pdf_parser.enabled` | false | 独立于 cleanfetch |
 | `pdf_parser.mineru_model` | pipeline | pipeline / vlm |
 | `pdf_parser.mineru_formula` | true | 公式识别 |

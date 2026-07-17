@@ -1,6 +1,7 @@
 package search
 
 import (
+	"strings"
 	"websearch/pkg/antirobot"
 	"websearch/pkg/baidu"
 	"websearch/pkg/bing"
@@ -158,42 +159,52 @@ func buildExaMode(pool *KeyPool, g *SearchGroup, conf config.Config) SearchInf {
 	return NewExaSearchWithResults(pool, numResults, lookbackDays, conf.BlackListHost)
 }
 
-// buildApipoolMode API Key 池轮转模式：百度搜索 + Tavily + Exa 并发去重。
-// 仅使用 API 引擎（不包含网页抓取引擎），先选供应商再轮转 SK。
+// buildApipoolMode API Key 池轮转模式：每次请求只调用一个供应商，失败自动切换下一个。
+// 跨请求时供应商和 Key 均 round-robin 轮转。
+// 供应商顺序由 conf.Apipool.Engines 配置控制（默认 baidu → tavily → exa）。
 // 百度端点由 baidu.enable_ai_search 配置控制（默认 true=智能搜索）。
 func buildApipoolMode(baiduPool, tavilyPool, exaPool *KeyPool, baiduWeb *EngineSearchAdapter, g *SearchGroup, conf config.Config) SearchInf {
-	var engines []SearchInf
-	// 百度搜索（有 Key 时优先，enable_ai_search 控制端点选择）
-	if baiduPool != nil {
-		engines = append(engines, newBaiduSearchFromConf(baiduPool, conf))
-	}
-	// Tavily
-	if tavilyPool != nil {
-		engines = append(engines, NewTavilySearch(tavilyPool, conf.BlackListHost))
-	}
-	// Exa
-	if exaPool != nil {
-		numResults := conf.Exa.NumResults
-		if numResults <= 0 {
-			numResults = 5
+	// 按配置顺序构建供应商（web 兜底始终追加在末尾）
+	var providers []apipoolProvider
+	for _, name := range conf.Apipool.GetEngines() {
+		switch strings.ToLower(name) {
+		case "baidu":
+			if baiduPool != nil {
+				providers = append(providers, apipoolProvider{engine: newBaiduSearchFromConf(baiduPool, conf), pool: baiduPool})
+			}
+		case "tavily":
+			if tavilyPool != nil {
+				providers = append(providers, apipoolProvider{engine: NewTavilySearch(tavilyPool, conf.BlackListHost), pool: tavilyPool})
+			}
+		case "exa":
+			if exaPool != nil {
+				numResults := conf.Exa.NumResults
+				if numResults <= 0 {
+					numResults = 5
+				}
+				lookbackDays := conf.Exa.LookbackDays
+				if lookbackDays <= 0 {
+					lookbackDays = 90
+				}
+				providers = append(providers, apipoolProvider{engine: NewExaSearchWithResults(exaPool, numResults, lookbackDays, conf.BlackListHost), pool: exaPool})
+			}
+		default:
+			log.Infof("apipool: 未知供应商 %q，跳过", name)
 		}
-		lookbackDays := conf.Exa.LookbackDays
-		if lookbackDays <= 0 {
-			lookbackDays = 90
-		}
-		engines = append(engines, NewExaSearchWithResults(exaPool, numResults, lookbackDays, conf.BlackListHost))
 	}
-	// 百度网页搜索作为兜底（无需 Key）
+	// 百度网页搜索作为最终兜底（无需 Key，始终在末尾）
 	if baiduWeb != nil {
-		engines = append(engines, baiduWeb)
+		providers = append(providers, apipoolProvider{engine: baiduWeb, pool: nil})
 	}
-	if len(engines) == 0 {
+	if len(providers) == 0 {
 		log.Error("apipool 模式需要至少配置一个 API Key（baidu/tavily/exa）")
 		return nil
 	}
-	hs := NewHybridSearch(engines...)
-	applySmartSearchFilters(hs, conf)
-	return hs
+	ap := NewApipoolSearch(conf.Apipool.GetStrategy(), providers...)
+	if conf.SmartSearch.MaxSize > 0 {
+		ap.SetMaxSize(conf.SmartSearch.MaxSize)
+	}
+	return ap
 }
 
 // buildHybridMode 全引擎混合模式：百度搜索 + 百度网页搜索 + Tavily + Exa + Bing + Google + DuckDuckGo。

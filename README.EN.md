@@ -16,14 +16,14 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 ## Design Highlights
 
 - **Zero-config startup** — `engine` mode requires no API keys; built-in Baidu web search + Bing dual-engine concurrent search, DuckDuckGo auto-joins when a proxy is available
-- **API Key multi-key rotation** — `baidu`/`tavily`/`exa` all support `sk_list` multi-key round-robin rotation; invalid keys auto-recover after 30 minutes
-- **Baidu AI Search** — `baidu` mode defaults to Qianfan `chat/completions` intelligent search endpoint; `enable_ai_search` toggles back to legacy `web_search`
+- **API Key Pool** — `apipool` mode: one provider per request, auto-fallback on failure; supports `round-robin` (rotating) and `priority` (fixed order) strategies; each provider supports `sk_list` multi-key rotation with 30-min cooldown on failure; auto-retry next SK within the same provider
+- **Baidu AI Search** — `baidu` mode defaults to Qianfan `chat/completions` endpoint; free Baidu search when `model` is empty (no LLM cost); LLM-powered search when a model name is set
 - **System proxy auto-detection** — reads Windows registry / environment variables by default; Clash and similar proxy software enable DuckDuckGo, academic engines, Jina Reader automatically without manual configuration
 - **Smart rate-limit retry** — all HTTP clients handle 429 responses automatically (reads `Retry-After` header); arXiv engine has a built-in 1 req/s limiter
 - **Multi-engine parallel orchestration** — academic search fires requests to multiple engines concurrently with URL dedup + normalized grouping; hybrid mode mixes native engines
 - **Score-based result filtering** — per-engine minimum relevance score thresholds and max result count truncation; engines without score support skip filtering automatically; merged results sorted by score or distributed round-robin
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
-- **Enhanced web fetching** — based on go-webfetch, no proxy needed; built-in SSRF protection, DNS rebinding detection, HEAD pre-check for large files and WAF detection; large content auto-stored to temp files
+- **Enhanced web fetching** — based on go-webfetch, no proxy needed; TLS fingerprint spoofing (Chrome 131) + retry backoff + system proxy support; built-in SSRF protection, DNS rebinding detection, HEAD pre-check for large files and WAF detection; large content auto-stored to temp files
 - **MinerU AI-enhanced PDF parsing** — optional MinerU integration for intelligent table/formula/multi-column/image recognition; with Token uses Standard API (≤200MB), without Token auto-degrades to Agent Lightweight API (≤10MB), silently falls back to local parsing on failure
 - **Reference-counted process management** — multiple clients share one instance; auto-exits when count reaches zero
 - **Sub-agent extension** — optional companion [web-researcher](https://github.com/daidaiJ/web-researcher) extension offloads web research to a fast model sub-agent, zero context bloat for the main model (see [Qwen Code Sub-Agent Extension](#qwen-code-sub-agent-extension-web-researcher))
@@ -171,13 +171,13 @@ Windows auto-start (optional): run `websearch-mcpserver.exe install` after downl
 | Mode | Description | Key Required |
 |------|-------------|--------------|
 | `baidu` | Baidu Qianfan search (`enable_ai_search` controls endpoint), falls back to Baidu web search on failure; uses Baidu web search directly when no SK | `BAIDU_SK` (optional) |
-| **`apipool`** | **API Key pool rotation: Baidu + Tavily + Exa concurrent dedup, provider selected first then SK rotated** | All optional |
+| **`apipool`** | **API Key pool rotation**: one provider per request, auto-fallback; supports `round-robin` / `priority` strategies; auto-retry next SK within provider; Baidu web search as final fallback | All optional |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
 | `exa` | Exa Web Search API | `EXA_API_KEY` |
 | `hybrid` | Full mixed (Baidu AI + Baidu web + Tavily + Exa + Bing + DuckDuckGo) | All optional |
 | **`engine`** | **Baidu web search + Bing** (DuckDuckGo auto-joins when proxy available) | **None** |
 
-> All modes auto-fallback on primary engine failure. Auto-degrades to `engine` mode when keys are missing. `baidu`/`tavily`/`exa` all support `sk_list` multi-key rotation; `sk_list` falls back to `api_key` as single-element list when empty.
+> All modes auto-fallback on primary engine failure. Auto-degrades to `engine` mode when keys are missing. `baidu`/`tavily`/`exa` all support `sk_list` multi-key rotation; `sk_list` falls back to `api_key` as single-element list when empty. `apipool` provider order and strategy are configurable via the `apipool` section, see [Apipool Config](#apipool-config).
 
 ### SmartSearch Advanced Config
 
@@ -207,6 +207,25 @@ smartsearch:
 - Engine returns score: filter by `min_score`, keep `max_size` results
 - Engine returns no score: ignore `min_score`, take `min(max_size, ⌈global_max_size / engine_count⌉)`
 - Global `max_size`: with scores → sort by score and truncate; without scores → round-robin distribution across engines
+
+### Apipool Config
+
+The `apipool` section controls provider selection strategy and priority order for `mode: apipool`:
+
+```yaml
+apipool:
+  strategy: round-robin   # round-robin (default) / priority
+  engines:                # Provider priority order (default [baidu, tavily, exa])
+    - baidu
+    - tavily
+    - exa
+```
+
+**Strategy details**:
+- **`round-robin`** (default): rotates the starting provider across requests; within a single request, exhausts all available SKs in the current provider before falling back to the next
+- **`priority`**: always starts from the first provider in the list; exhausts all SKs → switches to next provider → Baidu web search as final fallback
+
+**Workflow**: select provider → `pool.Next()` → call API → success / mark key cooldown 30 min → retry next SK in same provider → all exhausted → next provider → all failed → Baidu web search fallback
 
 ## MCP Tools
 

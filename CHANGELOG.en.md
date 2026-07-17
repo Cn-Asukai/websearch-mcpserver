@@ -2,6 +2,15 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.13.0 — 2026-07-19
+
+### Changed
+- **Baidu AI search model optional**: free Baidu search when `baidu.model` is empty (no LLM cost); LLM-powered search only when a model name is explicitly set; `enable_ai_search` stays `true` by default
+- **Upgraded go-webfetch to v0.2.0**: cleanfetch engine inherits TLS fingerprint spoofing (tls-client Chrome 131) + retry backoff + system proxy support for better anti-bot capabilities
+
+### Added
+- cleanfetch new config fields: `use_system_proxy` (default false) and `max_retries` (default 3)
+
 ## v2.12.0 — 2026-07-15
 
 ### Added

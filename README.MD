@@ -16,14 +16,14 @@
 ## 设计亮点
 
 - **零依赖启动** — `engine` 模式无需任何 API Key，内置百度网页搜索 + Bing 双引擎并发，代理可用时自动加入 DuckDuckGo
-- **API Key 多 Key 轮询** — `baidu`/`tavily`/`exa` 均支持 `sk_list` 多 Key round-robin 轮转，Key 失效 30 分钟自动恢复
-- **百度智能搜索** — `baidu` 模式默认使用千帆 `chat/completions` 智能搜索端点，`enable_ai_search` 可切换回旧版 `web_search`
+- **API Key 池** — `apipool` 模式：每次只调一个供应商，失败自动切换下一个，支持 `round-robin`（跨请求轮转）和 `priority`（固定优先级）两种策略；各供应商均支持 `sk_list` 多 Key 轮转，Key 失效 30 分钟自动恢复，同供应商内自动重试下一个 SK
+- **百度智能搜索** — `baidu` 模式默认使用千帆 `chat/completions` 端点，不配置 model 时走免费百度搜索（不产生 LLM 费用）；配置 `model` 启用 LLM 智能搜索生成
 - **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 DuckDuckGo、学术引擎、Jina Reader 自动走代理，无需手动配置
 - **智能限流重试** — 所有 HTTP 客户端自动处理 429 限流（读取 `Retry-After` 头等待后重试），arXiv 引擎内置 1 req/s 限流器避免触发限流
 - **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
 - **搜索结果 Score 过滤** — 支持 per-engine 最低相关性分数阈值和最大结果数截断，无 score 引擎自动跳过过滤，合并后按 score 排序或轮询均匀分配
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
-- **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，内置 SSRF 防护、DNS rebinding 检测、HEAD 预检防大文件和 WAF 检测，大内容自动存储到临时文件
+- **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，TLS 指纹伪装（Chrome 131）+ 重试退避 + 系统代理支持；内置 SSRF 防护、DNS rebinding 检测、HEAD 预检防大文件和 WAF 检测，大内容自动存储到临时文件
 - **MinerU AI 增强 PDF 解析** — 可选集成 MinerU 文档解析平台，支持表格/公式/多栏/图片智能识别；有 Token 用精准 API（≤200MB），无 Token 自动降级 Agent 轻量 API（≤10MB），失败静默回退本地解析
 - **引用计数进程管理** — 多客户端共享同一实例，归零自动优雅退出
 - **子智能体扩展** — 可选配套 [web-researcher](https://github.com/daidaiJ/web-researcher) 扩展，将网络调研卸载到 fast model 子智能体，主模型上下文零膨胀（详见 [Qwen Code 子智能体扩展](#qwen-code-子智能体扩展web-researcher)）
@@ -171,13 +171,13 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 | 模式 | 说明 | 需要 Key |
 |------|------|----------|
 | `baidu` | 百度千帆搜索（`enable_ai_search` 控制端点），失败自动回退百度网页搜索；无 SK 时直接用百度网页搜索 | `BAIDU_SK`（可选） |
-| **`apipool`** | **API Key 池轮转：百度 + Tavily + Exa 并发去重，先选供应商再轮转 SK** | 各 Key 可选 |
+| **`apipool`** | **API Key 池轮转**：每次只调一个供应商，失败自动切换；支持 `round-robin`（轮转）/ `priority`（优先级）策略；同供应商内自动重试下一个 SK；百度网页搜索兜底 | 各 Key 可选 |
 | `tavily` | Tavily Search API | `TAVILY_SK` |
 | `exa` | Exa Web Search API | `EXA_API_KEY` |
 | `hybrid` | 全引擎混合（百度智能搜索 + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo） | 各 Key 可选 |
 | **`engine`** | **百度网页搜索 + Bing**（代理可用时自动加入 DuckDuckGo） | **无需** |
 
-> 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu`/`tavily`/`exa` 均支持 `sk_list` 多 Key 轮询，`sk_list` 为空时自动用 `api_key` 作为单元素列表。
+> 所有模式下主引擎失败均自动回退。无 Key 时自动降级为 `engine`。`baidu`/`tavily`/`exa` 均支持 `sk_list` 多 Key 轮询，`sk_list` 为空时自动用 `api_key` 作为单元素列表。`apipool` 模式的供应商顺序和策略可通过 `apipool` 配置节自定义，详见 [Apipool 配置](#apipool-配置)。
 
 ### SmartSearch 高级配置
 
@@ -207,6 +207,25 @@ smartsearch:
 - 引擎回传 score 时：按 `min_score` 过滤，保留 `max_size` 条
 - 引擎不回传 score 时：忽略 `min_score`，取 `min(max_size, ⌈global_max_size / 引擎数⌉)` 截断
 - 全局 `max_size`：有 score 时按 score 排序截断，无 score 时按引擎轮询均匀分配
+
+### Apipool 配置
+
+`apipool` 节控制 `mode: apipool` 时的供应商选择策略和优先级顺序：
+
+```yaml
+apipool:
+  strategy: round-robin   # round-robin（默认）/ priority
+  engines:                # 供应商优先级顺序（默认 [baidu, tavily, exa]）
+    - baidu
+    - tavily
+    - exa
+```
+
+**策略说明**：
+- **`round-robin`**（默认）：跨请求轮转起始供应商，每次请求内先用完当前供应商所有可用 SK 再 fallback 到下一个
+- **`priority`**：始终从列表第一个供应商开始，用完所有 SK → 切换下一个供应商 → 百度网页搜索兜底
+
+**工作流程**：选供应商 → `pool.Next()` 取 key → 调 API → 成功返回 / 失败标记 key 冷却 30 分钟 → 同供应商下一个 SK 重试 → 全部耗尽切下一个供应商 → 全部失败用百度网页搜索兜底
 
 ## MCP 工具
 

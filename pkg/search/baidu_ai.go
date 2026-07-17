@@ -29,7 +29,7 @@ type baiduAIReqMsg struct {
 
 type baiduAIReq struct {
 	Messages          []baiduAIReqMsg         `json:"messages"`
-	Model             string                  `json:"model"`
+	Model             string                  `json:"model,omitempty"`
 	SearchSource      string                  `json:"search_source,omitempty"`
 	ResourceTypeFilter []baiduSearchTypeFliter `json:"resource_type_filter,omitempty"`
 	SearchRecencyFilter string                `json:"search_recency_filter,omitempty"`
@@ -67,10 +67,8 @@ type baiduAIResponse struct {
 }
 
 // NewBaiduAISearch 创建百度智能搜索实例。
+// model 为空时走免费百度搜索（不产生 LLM 费用），传入模型名时启用 LLM 智能搜索生成。
 func NewBaiduAISearch(keys *KeyPool, blacklist []string, model, searchSource string, enableReasoning, enableDeepSearch bool, searchMode string) *BaiduAISearchImpl {
-	if model == "" {
-		model = "ernie-4.5-turbo-32k"
-	}
 	if searchSource == "" {
 		searchSource = "baidu_search_v2"
 	}

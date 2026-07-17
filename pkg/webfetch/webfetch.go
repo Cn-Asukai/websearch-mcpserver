@@ -62,6 +62,8 @@ func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, p
 		FileOutputDir:   outputDir,
 		FileTTL:         fileTTL,
 		ProxyURL:        proxyURL,
+		UseSystemProxy:  cfg.UseSystemProxy,
+		MaxRetries:      cfg.MaxRetries,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("webfetch engine init failed: %w", err)

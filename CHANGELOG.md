@@ -2,6 +2,15 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.13.0 — 2026-07-19
+
+### 变更
+- **百度智能搜索 model 可选**：不配置 `baidu.model` 时走免费百度搜索（不产生 LLM 费用），配置模型名才启用 LLM 智能搜索生成；`enable_ai_search` 保持默认 `true`
+- **升级 go-webfetch v0.2.0**：cleanfetch 引擎继承 TLS 指纹伪装（tls-client Chrome 131）+ 重试退避 + 系统代理支持，增强反爬能力
+
+### 新增
+- cleanfetch 新增 `use_system_proxy`（默认 false）和 `max_retries`（默认 3）配置项
+
 ## v2.12.0 — 2026-07-15
 
 ### 新增

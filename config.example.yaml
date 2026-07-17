@@ -12,7 +12,7 @@ log_level: info
 
 # 搜索模式:
 #   - baidu      : 百度千帆搜索（失败自动回退百度网页搜索），enable_ai_search 控制端点
-#   - apipool    : API Key 池轮转：百度 + Tavily + Exa 并发去重（先选供应商再轮转 SK）
+#   - apipool    : API Key 池轮转：每次只调一个供应商，失败自动切换，支持 round-robin / priority 策略
 #   - tavily     : 仅使用 Tavily Search API
 #   - exa        : 仅使用 Exa Web Search API
 #   - hybrid     : 全引擎混合（百度智能搜索 + 百度网页搜索 + Tavily + Exa + Bing + DuckDuckGo）
@@ -52,7 +52,7 @@ rate_limit:
 #     - "sk-yyyy"
 #   # 搜索端点配置
 #   enable_ai_search: true           # true=智能搜索 chat/completions（默认），false=网页搜索 web_search
-#   model: "ernie-4.5-turbo-32k"    # 智能搜索模型名（默认 ernie-4.5-turbo-32k）
+#   model: ""                      # 智能搜索模型名，不传时走免费百度搜索（不产生 LLM 费用）；传入模型名启用 LLM 智能搜索
 #   search_source: "baidu_search_v2" # 搜索引擎版本（默认 baidu_search_v2）
 #   enable_reasoning: false          # 深度思考（默认 false）
 #   enable_deep_search: false        # 深搜索（默认 false）
@@ -175,6 +175,8 @@ cleanfetch:
   max_inline_chars: 0       # 内联返回最大字符数，0=不限（默认 0）
   timeout_sec: 30           # 单次请求超时（秒），默认 30；经代理访问海外站点建议 30~60
   max_fetch_size_mb: 10     # HEAD 预检最大文件大小（MB），超过拒绝抓取（默认 10）
+  use_system_proxy: false   # 自动使用系统代理（环境变量+注册表），默认 false
+  max_retries: 3            # 最大重试次数（仅 429/502/503），默认 3
 
 # ==============================================
 # PDF 解析工具（基于 go-webfetch，独立于 cleanfetch）
@@ -230,3 +232,15 @@ log:
 #     duckduckgo:
 #       min_score: 0      # DuckDuckGo 不回传 score，此字段无效
 #       max_size: 4       # DuckDuckGo 单引擎最大结果数
+
+# ==============================================
+# Apipool 模式配置（可选，mode=apipool 时生效）
+# ==============================================
+# apipool:
+#   strategy: round-robin  # 供应商选择策略:
+#                          #   round-robin（默认）: 跨请求轮转起始供应商，每次请求内先用完当前供应商所有可用 SK 再 fallback
+#                          #   priority: 始终从第一个供应商开始，用完所有 SK → 下一个供应商 → web 引擎兜底
+#   engines:               # 供应商优先级顺序（默认 [baidu, tavily, exa]，百度网页搜索兜底始终在末尾）
+#     - baidu
+#     - tavily
+#     - exa

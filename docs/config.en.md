@@ -29,7 +29,7 @@ baidu:
   api_key: ""               # Env: BAIDU_SK (falls back to single-element sk_list when empty)
   sk_list: []               # Multi-key rotation list (priority over api_key)
   enable_ai_search: true    # true=AI search chat/completions (default), false=web search web_search
-  model: "ernie-4.5-turbo-32k"     # AI search model
+  model: ""                 # AI search model, empty=free Baidu search (no LLM cost), set name=LLM intelligent search
   search_source: "baidu_search_v2" # Search engine version
   enable_reasoning: false   # Deep reasoning
   enable_deep_search: false # Deep search
@@ -94,6 +94,8 @@ cleanfetch:
   file_ttl_hours: 24        # Temp file retention (hours)
   max_inline_lines: 100     # Lines above this threshold stored to file
   max_inline_chars: 0       # Chars above this threshold stored to file, 0=unlimited
+  use_system_proxy: false   # Auto-use system proxy (env vars + Windows registry), default false
+  max_retries: 3            # Max retries (429/502/503 only), default 3
 
 # PDF parser (disabled by default, independent of cleanfetch)
 # MinerU AI enhancement (optional): with Token uses Standard API (remote URL, ≤200MB), without Token uses Agent API (local file, ≤10MB)
@@ -134,6 +136,15 @@ pdf_parser:
 #       min_score: 0      # DuckDuckGo doesn't return score, this field is ignored
 #       max_size: 4       # DuckDuckGo per-engine max results
 
+# Apipool mode config (optional, effective when mode=apipool)
+# apipool:
+#   strategy: round-robin  # round-robin (default): rotate starting provider across requests
+#                          # priority: always start from first provider
+#   engines:               # Provider priority order (default [baidu, tavily, exa], Baidu web search fallback always last)
+#     - baidu
+#     - tavily
+#     - exa
+
 # Log rotation
 log:
   max_size: 1               # Max file size (MB)
@@ -159,8 +170,10 @@ log:
 | Field | Default | Notes |
 |-------|---------|-------|
 | `port` | 8338 | stop/kill/status also use this port when no config |
-| `mode` | baidu | Auto-degrades to engine when no keys; `apipool` = API Key pool rotation mode |
-| `baidu.enable_ai_search` | true | true=AI search chat/completions, false=web search web_search |
+| `mode` | baidu | Auto-degrades to engine when no keys; `apipool` = API Key pool rotation, supports round-robin / priority strategies |
+| `apipool.strategy` | round-robin | `round-robin` rotates provider across requests / `priority` fixed order |
+| `apipool.engines` | [baidu, tavily, exa] | Provider priority order, Baidu web search fallback always last |
+| `baidu.enable_ai_search` | true | true=AI search chat/completions, false=web search web_search; no LLM cost when model is empty |
 | `network` | china | |
 | `bing.enabled` | true | |
 | `bing.per_sec` | 1 | |
@@ -172,6 +185,8 @@ log:
 | `cleanfetch.enabled` | false | Old configs don't enable; must be explicit |
 | `cleanfetch.file_ttl_hours` | 24 | |
 | `cleanfetch.max_inline_lines` | 100 | |
+| `cleanfetch.use_system_proxy` | false | Auto-use system proxy (env vars + Windows registry) |
+| `cleanfetch.max_retries` | 3 | Only retries on 429/502/503 |
 | `pdf_parser.enabled` | false | Independent of cleanfetch |
 | `pdf_parser.mineru_model` | pipeline | pipeline / vlm |
 | `pdf_parser.mineru_formula` | true | Formula recognition |

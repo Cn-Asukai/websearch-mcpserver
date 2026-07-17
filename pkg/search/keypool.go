@@ -16,10 +16,11 @@ type keyState struct {
 
 // KeyPool 线程安全的 API Key 轮询池，支持失效标记与自动恢复。
 type KeyPool struct {
-	keys  []string
-	states []keyState
-	idx   atomic.Uint64
-	mu    sync.Mutex // 保护 states
+	keys     []string
+	states   []keyState
+	idx      atomic.Uint64
+	lastKey  atomic.Value // 最近一次 Next() 返回的 key（string）
+	mu       sync.Mutex   // 保护 states
 }
 
 // NewKeyPool 创建 KeyPool，keys 必须非空。
@@ -54,6 +55,7 @@ func (p *KeyPool) Next() string {
 		idx := (p.idx.Add(1) - 1) % n
 		if p.states[idx].invalidUntil.IsZero() || now.After(p.states[idx].invalidUntil) {
 			p.states[idx].invalidUntil = time.Time{}
+			p.lastKey.Store(p.keys[idx])
 			return p.keys[idx]
 		}
 		if earliestRecover.IsZero() || p.states[idx].invalidUntil.Before(earliestRecover) {
@@ -64,9 +66,11 @@ func (p *KeyPool) Next() string {
 	// 全部失效，返回最早恢复的那个（不等待）
 	for i := range p.states {
 		if p.states[i].invalidUntil.Equal(earliestRecover) {
+			p.lastKey.Store(p.keys[i])
 			return p.keys[i]
 		}
 	}
+	p.lastKey.Store(p.keys[0])
 	return p.keys[0]
 }
 
@@ -80,6 +84,15 @@ func (p *KeyPool) MarkInvalid(key string) {
 			return
 		}
 	}
+}
+
+// MarkLastInvalid 标记 Next() 最近返回的 key 失效 30 分钟。
+func (p *KeyPool) MarkLastInvalid() {
+	v := p.lastKey.Load()
+	if v == nil {
+		return
+	}
+	p.MarkInvalid(v.(string))
 }
 
 // Len 返回池中 key 总数。
