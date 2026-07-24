@@ -99,6 +99,7 @@ func buildEngineMode(g *SearchGroup, baiduWeb, google, ddg *EngineSearchAdapter)
 		return engines[0]
 	}
 	hs := NewHybridSearch(engines...)
+	applySmartSearchFilters(hs, g.conf)
 	return hs
 }
 
@@ -391,11 +392,17 @@ func initAcademicEngine(conf config.Config, g *SearchGroup) {
 	log.Infof("学术引擎已启用: %v", engines)
 }
 
-// applySmartSearchFilters 将 SmartSearchConfig 转换为 HybridSearchImpl 的过滤规则。
+// applySmartSearchFilters 将 SmartSearchConfig 转换为 HybridSearchImpl 的过滤规则与评分增强开关。
 func applySmartSearchFilters(hs *HybridSearchImpl, conf config.Config) {
 	sc := conf.SmartSearch
 	if sc.MaxSize > 0 {
 		hs.SetMaxSize(sc.MaxSize)
+	}
+	// Wigolo 本地评分增强（默认启用）
+	enhance := sc.Enhance == nil || *sc.Enhance
+	hs.SetEnhance(enhance, sc.RelevanceThreshold)
+	if enhance {
+		log.Infof("Wigolo 评分增强已启用（阀值=%.3f）", sc.RelevanceThreshold)
 	}
 	if len(sc.Engines) == 0 {
 		return
@@ -405,6 +412,7 @@ func applySmartSearchFilters(hs *HybridSearchImpl, conf config.Config) {
 		engineMap[name] = engineFilter{
 			minScore: ec.MinScore,
 			maxSize:  ec.MaxSize,
+			weight:   ec.Weight,
 		}
 	}
 	hs.SetFilters(engineMap)

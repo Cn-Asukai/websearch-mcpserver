@@ -26,6 +26,7 @@ type baiduSearchTypeFliter struct {
 
 type baiduSearchReq struct {
 	Message    []baiduSearchMsg        `json:"messages"`
+	SearchSource string                `json:"search_source"` // 必填，固定值 baidu_search_v2
 	TypeFliter []baiduSearchTypeFliter `json:"resource_type_filter"`
 	BlackSites []string                `json:"block_websites"`
 	Recency    string                  `json:"search_recency_filter"`
@@ -99,21 +100,26 @@ func lookbackDaysToRecency(days int) string {
 
 func (b *BaiduSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	req := baiduSearchReq{
-		Message:    []baiduSearchMsg{{Content: query, Role: "user"}},
-		TypeFliter: []baiduSearchTypeFliter{{Type: "web", TopK: 5}},
-		BlackSites: b.blacklist,
-		Recency:    b.recency,
+		Message:      []baiduSearchMsg{{Content: query, Role: "user"}},
+		SearchSource: "baidu_search_v2",
+		TypeFliter:   []baiduSearchTypeFliter{{Type: "web", TopK: 5}},
+		BlackSites:   b.blacklist,
+		Recency:      b.recency,
 	}
 	rep := baidSearchReponse{}
 	res, err := client.DefaultClient.R().SetHeader(b.authHeader, fmt.Sprintf("Bearer %s", b.keys.Next())).SetBody(req).SetResult(&rep).Post(b.hostUlr)
 	if err != nil {
-		if rep.Message != "" {
-			return nil, fmt.Errorf("百度搜索api 调用失败，%s", rep.Message)
-		}
 		return nil, fmt.Errorf("百度搜索api 调用失败，%w", err)
 	}
+	// 非 200 通常意味着鉴权/配额/参数错误，显式暴露状态码与服务端消息，避免误报为“内容为空”
+	if res.StatusCode() != 200 {
+		if rep.Message != "" {
+			return nil, fmt.Errorf("百度搜索api 返回错误状态码 %d: %s (code=%s)", res.StatusCode(), rep.Message, rep.Code)
+		}
+		return nil, fmt.Errorf("百度搜索api 返回错误状态码 %d: %s", res.StatusCode(), res.String())
+	}
 	if len(rep.References) == 0 {
-		return nil, fmt.Errorf("百度搜索api 内容为空 %+v", res)
+		return nil, fmt.Errorf("百度搜索api 内容为空")
 	}
 	ret := make([]SearchResult, 0, len(rep.References))
 	for _, val := range rep.References {

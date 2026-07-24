@@ -19,7 +19,8 @@ type SearchResult struct {
 	Content     string  `json:"content"`
 	PublishDate string  `json:"publishedDate"`
 	Score       float64 `json:"score,omitempty"`       // 搜索相关性分数（Tavily 等引擎回传，0 表示无分数）
-	Engine      string  `json:"engine,omitempty"`      // 结果来源引擎名
+	Engine      string  `json:"engine,omitempty"`      // 结果来源引擎名（首个返回该 URL 的引擎）
+	Engines     []string `json:"engines,omitempty"`    // 返回该 URL 的全部引擎（Wigolo 评分增强的共识 Boost 使用）
 	Type        string  `json:"type,omitempty"`        // "paper" 或 "web"，学术搜索时为 "paper"
 	Authors     string  `json:"authors,omitempty"`     // 论文作者
 	DOI         string  `json:"doi,omitempty"`         // 论文 DOI

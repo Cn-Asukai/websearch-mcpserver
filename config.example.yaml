@@ -210,28 +210,37 @@ log:
 # smartsearch:
 #   max_size: 10          # 全局最大结果数（按 score 排序后截断），0 = 不限
 #   show_meta: true       # 输出中是否显示引擎来源和相关性分数（默认 true）
+#   enhance: true         # 是否启用本地评分增强（RRF 融合 + 词汇对齐 + 域名品质 + 多层 Boost + 阀值过滤），默认 true
+#   relevance_threshold: 0.05  # 增强后相关性阀值，final_score < 该值的结果被过滤（Top-1/每引擎保底不受影响），默认 0.05
 #   engines:              # 按引擎名配置（引擎名: tavily_api, exa, baidu_api, baidu, bing, google, duckduckgo）
 #     tavily_api:
 #       min_score: 0.5    # Tavily API 最低相关性分数阈值（0 = 不过滤）
 #       max_size: 6       # Tavily API 单引擎最大结果数（默认 4）
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分（enhance=true 时生效），0 = 默认 1.0
 #     exa:
 #       min_score: 0      # Exa 不回传 score，此字段无效
 #       max_size: 4       # Exa 单引擎最大结果数
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 #     baidu_api:
 #       min_score: 0      # 百度千帆 API 不回传 score，此字段无效（enable_ai_search 控制端点）
 #       max_size: 5       # 百度千帆 API 单引擎最大结果数
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 #     baidu:
 #       min_score: 0      # 百度网页搜索不回传 score，此字段无效
 #       max_size: 5       # 百度网页搜索单引擎最大结果数
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 #     bing:
 #       min_score: 0      # Bing 不回传 score，此字段无效
 #       max_size: 4       # Bing 单引擎最大结果数
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 #     google:
 #       min_score: 0      # Google 不回传 score，此字段无效
 #       max_size: 4       # Google 单引擎最大结果数
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 #     duckduckgo:
 #       min_score: 0      # DuckDuckGo 不回传 score，此字段无效
 #       max_size: 4       # DuckDuckGo 单引擎最大结果数
+#       weight: 1.0       # 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 
 # ==============================================
 # Apipool 模式配置（可选，mode=apipool 时生效）

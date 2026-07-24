@@ -13,6 +13,7 @@ import (
 type engineFilter struct {
 	minScore float64 // 最低相关性分数，0 = 不过滤
 	maxSize  int     // 单引擎最大结果数，0 = 使用默认值
+	weight   float64 // 引擎权重，影响 RRF 融合分，0 = 默认 1.0
 }
 
 // HybridSearchImpl 多引擎并发搜索，支持按 score 过滤和 per-engine maxsize 截断。
@@ -21,6 +22,8 @@ type HybridSearchImpl struct {
 	engineMap   map[string]engineFilter // 按引擎名配置的过滤规则
 	maxSize     int                     // 全局最大结果数（按 score 排序后截断），0 = 不限
 	engineNames []string                // 与 engines 一一对应的引擎名
+	enhance          bool               // 是否启用 Wigolo 本地评分增强
+	relevanceThreshold float64          // 增强后的相关性阀值
 }
 
 // indexedResult 并发搜索时单个引擎的结果。
@@ -46,6 +49,12 @@ func (h *HybridSearchImpl) SetFilters(engineMap map[string]engineFilter) {
 // SetMaxSize 设置全局最大结果数。
 func (h *HybridSearchImpl) SetMaxSize(n int) {
 	h.maxSize = n
+}
+
+// SetEnhance 启用/关闭 Wigolo 本地评分增强，threshold <= 0 时使用默认 0.05。
+func (h *HybridSearchImpl) SetEnhance(enabled bool, threshold float64) {
+	h.enhance = enabled
+	h.relevanceThreshold = threshold
 }
 
 func (h *HybridSearchImpl) Name() string { return "hybrid" }
@@ -80,7 +89,7 @@ func (h *HybridSearchImpl) SearchRawWithTimeRange(query string, lookbackDays int
 
 	wg.Wait()
 	close(ch)
-	return h.mergeResults(ch)
+	return h.mergeResults(query, ch)
 }
 
 func (h *HybridSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
@@ -98,13 +107,14 @@ func (h *HybridSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 
 	wg.Wait()
 	close(ch)
-	return h.mergeResults(ch)
+	return h.mergeResults(query, ch)
 }
 
 // mergeResults 合并多引擎搜索结果，去重、过滤、截断。
-func (h *HybridSearchImpl) mergeResults(ch <-chan indexedResult) ([]SearchResult, error) {
+func (h *HybridSearchImpl) mergeResults(query string, ch <-chan indexedResult) ([]SearchResult, error) {
 	seen := make(map[string]struct{})
 	var merged []SearchResult
+	var buckets []scoreBucket // 评分增强所需的 per-engine 排序桶
 
 	// 收集所有成功的结果，按引擎顺序合并
 	var allResults []indexedResult
@@ -168,7 +178,8 @@ func (h *HybridSearchImpl) mergeResults(ch <-chan indexedResult) ([]SearchResult
 			engineMax = defaultEngineMaxSize
 		}
 		// 引擎不回传 score 时，取 min(engineMax, ceil(globalMax/引擎总数)) 保留最相关结果
-		if h.maxSize > 0 && numEngines > 0 {
+		// 启用评分增强时跳过此均分，保留完整排序列表交由 RRF 做跨引擎融合
+		if !h.enhance && h.maxSize > 0 && numEngines > 0 {
 			hasScore := false
 			for _, r := range unique {
 				if r.Score > 0 {
@@ -187,6 +198,11 @@ func (h *HybridSearchImpl) mergeResults(ch <-chan indexedResult) ([]SearchResult
 			unique = unique[:engineMax]
 		}
 
+		// 收集评分增强所需的 per-engine 排序桶
+		if h.enhance {
+			buckets = append(buckets, scoreBucket{name: engineName, weight: ef.weight, results: unique})
+		}
+
 		// 跨引擎合并去重
 		for _, r := range unique {
 			normalizedURL := strings.TrimSpace(r.Url)
@@ -196,6 +212,15 @@ func (h *HybridSearchImpl) mergeResults(ch <-chan indexedResult) ([]SearchResult
 			seen[normalizedURL] = struct{}{}
 			merged = append(merged, r)
 		}
+	}
+
+	// 评分增强流水线：RRF 融合 + 局部信号 + 多层 Boost + 阀值过滤
+	if h.enhance {
+		enhanced := EnhanceResults(query, buckets, h.relevanceThreshold, h.maxSize)
+		if len(enhanced) == 0 {
+			return nil, fmt.Errorf("所有搜索引擎均未返回有效结果")
+		}
+		return enhanced, nil
 	}
 
 	if len(merged) == 0 {

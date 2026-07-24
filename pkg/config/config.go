@@ -296,13 +296,16 @@ type LogConfig struct {
 type SmartSearchConfig struct {
 	MaxSize int                          `mapstructure:"max_size"`  // 全局最大结果数（按 score 排序后截断），0 = 不限
 	ShowMeta bool                        `mapstructure:"show_meta"` // 输出中是否显示引擎来源和 score（默认 true）
+	Enhance  *bool                        `mapstructure:"enhance"`   // 是否启用 Wigolo 本地评分增强（RRF+词汇对齐+域名品质+多层 Boost），默认 true
+	RelevanceThreshold float64           `mapstructure:"relevance_threshold"` // 增强评分后的相关性阀值，低于此值丢弃（Top-1/每引擎保底），默认 0.05
 	Engines  map[string]SmartSearchEngine `mapstructure:"engines"`   // 按引擎名配置
 }
 
 // SmartSearchEngine 单引擎的 smartsearch 配置。
 type SmartSearchEngine struct {
-	MinScore float64 `mapstructure:"min_score"` // 最低相关性分数阈值，0 = 不过滤；引擎不支持 score 时忽略
+	MinScore float64 `mapstructure:"min_score"` // 最低相关性分数阀值，0 = 不过滤；引擎不支持 score 时忽略
 	MaxSize  int     `mapstructure:"max_size"`  // 单引擎最大结果数，0 = 使用默认值 4
+	Weight   float64 `mapstructure:"weight"`    // 引擎权重，影响 RRF 融合分（0 = 默认 1.0）
 }
 
 // ApipoolConfig apipool 模式配置。
@@ -455,6 +458,12 @@ func Load(configPath string) (*Config, error) {
 
 	// ── 默认值 ──
 
+	// 服务端口默认 8338：未配置时避免绑定到随机端口 :0，
+	// 否则 daemon/CLI 与 agent 通过 http://127.0.0.1:{port}/__admin 访问端点会失败。
+	if conf.Port <= 0 {
+		conf.Port = 8338
+	}
+
 	if conf.Log.MaxSize <= 0 {
 		conf.Log.MaxSize = 1
 	}
@@ -513,6 +522,13 @@ func Load(configPath string) (*Config, error) {
 	// SmartSearch 默认值
 	if !viper.IsSet("smartsearch.show_meta") {
 		conf.SmartSearch.ShowMeta = true // 默认显示引擎来源和 score
+	}
+	if conf.SmartSearch.Enhance == nil {
+		enhance := true // 默认启用 Wigolo 本地评分增强
+		conf.SmartSearch.Enhance = &enhance
+	}
+	if conf.SmartSearch.RelevanceThreshold <= 0 {
+		conf.SmartSearch.RelevanceThreshold = 0.05 // 默认相关性阀值
 	}
 
 	return &conf, nil

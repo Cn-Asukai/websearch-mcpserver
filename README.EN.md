@@ -21,7 +21,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 - **System proxy auto-detection** — reads Windows registry / environment variables by default; Clash and similar proxy software enable DuckDuckGo, academic engines, Jina Reader automatically without manual configuration
 - **Smart rate-limit retry** — all HTTP clients handle 429 responses automatically (reads `Retry-After` header); arXiv engine has a built-in 1 req/s limiter
 - **Multi-engine parallel orchestration** — academic search fires requests to multiple engines concurrently with URL dedup + normalized grouping; hybrid mode mixes native engines
-- **Score-based result filtering** — per-engine minimum relevance score thresholds and max result count truncation; engines without score support skip filtering automatically; merged results sorted by score or distributed round-robin
+- **Intelligent relevance scoring** — RRF fusion ranking across engines, combined with lexical alignment, rare-term/phrase contiguity matching, domain-quality penalties (down-weighting brand/e-commerce/dictionary mismatches), and multi-engine consensus / authority-site / recency boosts; a global low-score threshold truly prunes low-quality context (Top-1 protected, at least 2 kept), fully heuristic with no AI model required
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
 - **Enhanced web fetching** — based on go-webfetch, no proxy needed; TLS fingerprint spoofing (Chrome 131) + retry backoff + system proxy support; built-in SSRF protection, DNS rebinding detection, HEAD pre-check for large files and WAF detection; large content auto-stored to temp files
 - **MinerU AI-enhanced PDF parsing** — optional MinerU integration for intelligent table/formula/multi-column/image recognition; with Token uses Standard API (≤200MB), without Token auto-degrades to Agent Lightweight API (≤10MB), silently falls back to local parsing on failure
@@ -40,7 +40,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 | **LLM Summary** | Optional OpenAI-compatible API integration for structured summaries |
 | **Site Blocking** | Global `black_list_host`, auto-filters low-quality sites |
 | **Global Rate Limit** | `rate_limit` unified config for all search engines |
-| **Score Filtering** | per-engine `min_score` / `max_size`, global `max_size`, `show_meta` controls source and score display |
+| **Relevance Scoring** | RRF fusion ranking + domain-quality / lexical-alignment / consensus / authority / recency boosts, global low-score threshold prunes low-quality context; per-engine `min_score` / `max_size`, `show_meta` displays source and score |
 | **Time Range** | `smartsearch` tool supports `time_range` parameter (in months); API engines unified time range filtering |
 | **SearXNG Compatible** | `/searxng/search` endpoint, works with LiteLLM |
 

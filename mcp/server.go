@@ -23,11 +23,11 @@ func RegisterRouter(mux *http.ServeMux, conf config.Config) {
 
 	// ── 注册 smartsearch 工具 ──
 	if conf.Bing.Enabled {
-		searchDesc := "通用网络检索工具，搜索互联网获取最新信息。当需要查询实时数据、最新新闻、技术文档、产品信息、或其他需要联网获取的知识时使用。"
+		searchDesc := "通用联网检索工具，获取实时信息（新闻/技术文档/产品/数据等）。查询词需精准凝练、聚焦核心意图，避免堆砌大量同义/次要词形成关键词列表（会稀释相关性）。"
 		if conf.LLMEnabled() {
-			searchDesc += "支持通过 intent 参数指定搜索意图以获得更精准的结构化摘要。"
+			searchDesc += "可用 intent 参数说明检索目的以获得更精准的结构化摘要。"
 		}
-		searchDesc += "当主搜索引擎不可用时会自动回退到 Bing 引擎。"
+		searchDesc += "主引擎不可用时自动回退 Bing。"
 
 		if conf.LLMEnabled() {
 			mcp.AddTool(server, &mcp.Tool{
