@@ -22,14 +22,14 @@ import (
 
 // SearchParamsWithIntent LLM 摘要启用时使用的参数（含 intent）。
 type SearchParamsWithIntent struct {
-	Query     string `json:"query" jsonschema:"description,搜索关键词，例如 'Go并发编程' 或 '2024年新能源汽车销量'"`
+	Query     string `json:"query" jsonschema:"description,搜索关键词：需精准凝练地表达核心检索意图（建议 2-6 个关键词或一个短句），只保留最能定位目标的词；不要把同义词、过程词、修饰词一股脑堆砌成关键词列表，否则会稀释相关性。例如用 'Go 泛型 性能' 而非 'Go 泛型 类型参数 编译 运行时 性能 基准 对比 优化 使用方法'"`
 	Intent    string `json:"intent" jsonschema:"description,搜索意图，描述你希望通过搜索解决什么问题或获取什么信息。例如 '了解goroutine调度原理' '对比React和Vue的生态差异' '查找某API的用法示例'。提供意图后可获得更精准的结构化摘要"`
 	TimeRange int    `json:"time_range,omitempty" jsonschema:"description,搜索时间范围（月），限制搜索最近N个月的内容。例如 1=近1个月，3=近3个月，6=近半年，12=近一年。默认3，0表示不限"`
 }
 
 // SearchParamsNoIntent LLM 摘要未启用时使用的参数（无 intent，节省上下文 token）。
 type SearchParamsNoIntent struct {
-	Query     string `json:"query" jsonschema:"description,搜索关键词，例如 'Go并发编程' 或 '2024年新能源汽车销量'"`
+	Query     string `json:"query" jsonschema:"description,搜索关键词：需精准凝练地表达核心检索意图（建议 2-6 个关键词或一个短句），只保留最能定位目标的词；不要把同义词、过程词、修饰词一股脑堆砌成关键词列表，否则会稀释相关性。例如用 'Go 泛型 性能' 而非 'Go 泛型 类型参数 编译 运行时 性能 基准 对比 优化 使用方法'"`
 	TimeRange int    `json:"time_range,omitempty" jsonschema:"description,搜索时间范围（月），限制搜索最近N个月的内容。例如 1=近1个月，3=近3个月，6=近半年，12=近一年。默认3，0表示不限"`
 }
 

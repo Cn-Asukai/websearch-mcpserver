@@ -2,6 +2,23 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.14.0 — 2026-07-24
+
+### Added
+- **Intelligent relevance scoring pipeline (Wigolo)**: multi-engine results use RRF (Reciprocal Rank Fusion, K=60) fusion ranking, combined with lexical alignment, rare-term/phrase contiguity matching, domain-quality penalties, and multi-engine consensus / authority-site / recency boosts — fully heuristic, no AI model required
+  - Added `enhance.go` (RRF / ConsensusBoost / ApplyScoreFloor), `enhance_domain.go` (DomainQuality / AuthorityBoost), `enhance_text.go` (LexicalAlignment / RareTermsFactor), `enhance_intent.go` (intent classification)
+
+### Changed
+- **Low-quality context is truly pruned**: fixed `ApplyScoreFloor` by removing the "per-engine floor retention" logic; results scoring below the global threshold (default 0.05) are discarded, keeping only Top-1 (with a minimum of 2 results retained)
+
+### Fixed
+- **Admin endpoints unreachable**: `config.Load` now defaults `port` to 8338 when unset, avoiding binding to random port `:0` that made daemon/CLI and agents unable to reach `http://127.0.0.1:{port}/__admin`
+- **Baidu web search returning empty results**: `web_search` requests now include the required Qianfan field `search_source: "baidu_search_v2"`; `baidu.go` adds an HTTP status check that surfaces auth/quota/parameter errors on non-200 responses instead of mislabeling them as "empty content"
+
+### Tests
+- Added `TestEnhanceFiltersLowQuality` observability test verifying low-quality results are pruned (5→2)
+- Baidu live-API integration tests now skip when the environment is unavailable (network/auth/quota/empty result), preventing `go test ./...` from failing on external dependency outages
+
 ## v2.13.0 — 2026-07-19
 
 ### Changed

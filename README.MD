@@ -21,7 +21,7 @@
 - **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 DuckDuckGo、学术引擎、Jina Reader 自动走代理，无需手动配置
 - **智能限流重试** — 所有 HTTP 客户端自动处理 429 限流（读取 `Retry-After` 头等待后重试），arXiv 引擎内置 1 req/s 限流器避免触发限流
 - **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
-- **搜索结果 Score 过滤** — 支持 per-engine 最低相关性分数阈值和最大结果数截断，无 score 引擎自动跳过过滤，合并后按 score 排序或轮询均匀分配
+- **智能相关性评分** — 多引擎结果 RRF 融合排名，叠加词汇对齐、稀有词/短语连续匹配、域名品质惩罚（品牌/电商/词典站误匹配降权）与多引擎共识 / 权威站 / 时效性加分；全局低分阈值过滤真正裁剪低质量上下文（Top-1 保护、最少保留 2 条），纯启发式无需 AI 模型
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
 - **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，TLS 指纹伪装（Chrome 131）+ 重试退避 + 系统代理支持；内置 SSRF 防护、DNS rebinding 检测、HEAD 预检防大文件和 WAF 检测，大内容自动存储到临时文件
 - **MinerU AI 增强 PDF 解析** — 可选集成 MinerU 文档解析平台，支持表格/公式/多栏/图片智能识别；有 Token 用精准 API（≤200MB），无 Token 自动降级 Agent 轻量 API（≤10MB），失败静默回退本地解析
@@ -40,7 +40,7 @@
 | **LLM 摘要** | 可选接入 OpenAI 兼容 API，生成结构化摘要 |
 | **站点屏蔽** | 全局 `black_list_host`，自动过滤低质量站点 |
 | **全局限流** | `rate_limit` 统一配置所有搜索引擎的请求速率 |
-| **Score 过滤** | per-engine `min_score` / `max_size`，全局 `max_size`，`show_meta` 控制来源和分数展示 |
+| **相关性评分** | RRF 融合排名 + 域名品质 / 词汇对齐 / 共识 / 权威 / 新鲜度加分，全局低分阈值裁剪低质量上下文；per-engine `min_score` / `max_size`，`show_meta` 展示来源与分数 |
 | **时间范围** | `smartsearch` 工具支持 `time_range` 参数（月为单位），API 引擎统一支持时间范围过滤 |
 | **SearXNG 兼容** | `/searxng/search` 端点，可对接 LiteLLM |
 

@@ -2,6 +2,23 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.14.0 — 2026-07-24
+
+### 新增
+- **智能相关性评分管线（Wigolo）**：多引擎结果采用 RRF（Reciprocal Rank Fusion, K=60）融合排名，叠加词汇对齐、稀有词/短语连续匹配、域名品质惩罚、多引擎共识 / 权威站 / 时效性加分，纯启发式无需 AI 模型
+  - 新增 `enhance.go`（RRF / ConsensusBoost / ApplyScoreFloor）、`enhance_domain.go`（DomainQuality / AuthorityBoost）、`enhance_text.go`（LexicalAlignment / RareTermsFactor）、`enhance_intent.go`（意图分类）
+
+### 变更
+- **低质量上下文真正被裁剪**：修正 `ApplyScoreFloor`，移除“每引擎保底保留”逻辑，score 低于全局阈值（默认 0.05）的结果被丢弃，仅保留 Top-1（并保证最少 2 条）
+
+### 修复
+- **admin 端点不可达**：`config.Load` 未配置 `port` 时默认为 8338，避免绑定到随机端口 `:0` 导致 daemon/CLI 与 agent 无法通过 `http://127.0.0.1:{port}/__admin` 访问端点
+- **百度网页搜索返回空结果**：`web_search` 请求补充千帆必填字段 `search_source: "baidu_search_v2"`；`baidu.go` 新增 HTTP 状态码检查，非 200 时显式暴露鉴权/配额/参数错误，避免误报为“内容为空”
+
+### 测试
+- 新增 `TestEnhanceFiltersLowQuality` 观测性测试，实测低质量结果被裁剪（5→2）
+- 百度实时 API 集成测试改为环境不可用（网络/鉴权/配额/空结果）时 skip，避免 `go test ./...` 因外部依赖不可用而失败
+
 ## v2.13.0 — 2026-07-19
 
 ### 变更
