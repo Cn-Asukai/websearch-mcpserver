@@ -128,14 +128,14 @@ func TestNewFromConfigDefaults(t *testing.T) {
 	defer fetcher.Close()
 }
 
-func TestFetchHuggingFace(t *testing.T) {
+func TestFetchRuanyifengBlog(t *testing.T) {
 	fetcher := newTestFetcher(t)
 	defer fetcher.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := fetcher.Fetch(ctx, "https://huggingface.co/nvidia/LocateAnything-3B")
+	result, err := fetcher.Fetch(ctx, "https://www.ruanyifeng.com/blog/2026/07/weekly-issue-406.html")
 	if err != nil {
 		t.Fatalf("Fetch failed: %v", err)
 	}
@@ -147,15 +147,7 @@ func TestFetchHuggingFace(t *testing.T) {
 	t.Logf("Mode: %s", result.Mode)
 	if result.Mode == "inline" {
 		t.Logf("Markdown length: %d chars", len(result.Markdown))
-		t.Logf("Markdown preview (first 500 chars):\n%s", truncate(result.Markdown, 500))
 	} else {
 		t.Logf("File: %s (%d lines, %d chars)", result.FilePath, result.TotalLines, result.TotalChars)
 	}
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }

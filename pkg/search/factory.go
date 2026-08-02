@@ -387,6 +387,12 @@ func initAcademicEngine(conf config.Config, g *SearchGroup) {
 		return
 	}
 
+	// 学术评分增强（默认开启，配置独立于 smartsearch，属 academicsearch 工具）
+	adapter.SetEnhance(conf.Academic.Enhance, conf.Academic.Threshold)
+	if conf.Academic.Enhance {
+		log.Infof("学术评分增强已启用（阀值=%.3f）", conf.Academic.Threshold)
+	}
+
 	g.Academic = adapter
 	engines := adapter.Engines()
 	log.Infof("学术引擎已启用: %v", engines)
@@ -403,6 +409,11 @@ func applySmartSearchFilters(hs *HybridSearchImpl, conf config.Config) {
 	hs.SetEnhance(enhance, sc.RelevanceThreshold)
 	if enhance {
 		log.Infof("Wigolo 评分增强已启用（阀值=%.3f）", sc.RelevanceThreshold)
+	}
+	// MMR 多样性重排（默认启用）
+	hs.SetMMR(sc.MMR)
+	if enhance && sc.MMR.Enabled {
+		log.Infof("MMR 多样性重排已启用（λ=%.2f）", sc.MMR.Lambda)
 	}
 	if len(sc.Engines) == 0 {
 		return

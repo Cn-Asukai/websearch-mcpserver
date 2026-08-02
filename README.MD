@@ -21,7 +21,9 @@
 - **系统代理自动检测** — 默认读取 Windows 注册表 / 环境变量，Clash 等代理软件开启系统代理后 DuckDuckGo、学术引擎、Jina Reader 自动走代理，无需手动配置
 - **智能限流重试** — 所有 HTTP 客户端自动处理 429 限流（读取 `Retry-After` 头等待后重试），arXiv 引擎内置 1 req/s 限流器避免触发限流
 - **多引擎并行编排** — 学术搜索并发请求多个引擎，结果按 URL 去重 + 分组归一化排序；hybrid 模式下多引擎原生混合
-- **智能相关性评分** — 多引擎结果 RRF 融合排名，叠加词汇对齐、稀有词/短语连续匹配、域名品质惩罚（品牌/电商/词典站误匹配降权）与多引擎共识 / 权威站 / 时效性加分；全局低分阈值过滤真正裁剪低质量上下文（Top-1 保护、最少保留 2 条），纯启发式无需 AI 模型
+- **智能相关性评分** — 多引擎结果 RRF 融合排名，叠加词汇对齐、稀有词/短语连续匹配、域名品质惩罚（品牌/电商/词典站误匹配降权）与多引擎共识 / 权威站 / 时效性加分；全局低分阈值过滤真正裁剪低质量上下文（Top-1 保护、最少保留 2 条），纯启发式无需 AI 模型；末端 **MMR 多样性重排**（默认 λ=0.7）打散同主题高相似结果（转载/镜像站）
+- **学术搜索评分增强** — 六大学术引擎 RRF 融合排名，叠加引用数（对数压缩）、高影响力期刊/会议、PDF 全文可用性、新鲜度信号，低分论文自动过滤（Top-1 + 每引擎保底）
+- **LLM 摘要流式推送** — 摘要阶段通过 MCP progress notification 逐 token 实时推送生成过程，客户端断开自动取消，失败自动回退非流式摘要
 - **智能回退** — 百度 SK 失败自动回退网页搜索；主引擎失败自动回退 Bing；LLM 摘要失败回退原始结果；cleanfetch 失败回退 Jina Reader；缓存异常跳过缓存
 - **增强型网页抓取** — 基于 go-webfetch，无需代理即可抓取网页，TLS 指纹伪装（Chrome 131）+ 重试退避 + 系统代理支持；内置 SSRF 防护、DNS rebinding 检测、HEAD 预检防大文件和 WAF 检测，大内容自动存储到临时文件
 - **MinerU AI 增强 PDF 解析** — 可选集成 MinerU 文档解析平台，支持表格/公式/多栏/图片智能识别；有 Token 用精准 API（≤200MB），无 Token 自动降级 Agent 轻量 API（≤10MB），失败静默回退本地解析
@@ -34,13 +36,13 @@
 | 类别 | 能力 |
 |------|------|
 | **通用搜索** | 百度千帆、百度网页搜索（内置）、Tavily、Exa、Bing（内置）、DuckDuckGo（自动检测代理）、Google（默认禁用，需显式启用） |
-| **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（自动检测代理） |
+| **学术搜索** | arXiv、Crossref、OpenAlex、PubMed（国内直连）+ Semantic Scholar、Google Scholar（自动检测代理）；RRF 融合 + 引用数 / 期刊权威 / PDF / 新鲜度信号评分，低分过滤（每引擎保底） |
 | **MCP 工具** | `smartsearch` 网络检索 · `academicsearch` 论文检索 · `cleanfetch` 网页抓取 · `pdf_parser` PDF 解析 |
 | **缓存** | SQLite 自动缓存，6h 过期，后台定时清理 |
-| **LLM 摘要** | 可选接入 OpenAI 兼容 API，生成结构化摘要 |
+| **LLM 摘要** | 可选接入 OpenAI 兼容 API，生成结构化摘要；支持 MCP progress notification 逐 token 流式推送生成过程 |
 | **站点屏蔽** | 全局 `black_list_host`，自动过滤低质量站点 |
 | **全局限流** | `rate_limit` 统一配置所有搜索引擎的请求速率 |
-| **相关性评分** | RRF 融合排名 + 域名品质 / 词汇对齐 / 共识 / 权威 / 新鲜度加分，全局低分阈值裁剪低质量上下文；per-engine `min_score` / `max_size`，`show_meta` 展示来源与分数 |
+| **相关性评分** | RRF 融合排名 + 域名品质 / 词汇对齐 / 共识 / 权威 / 新鲜度加分，全局低分阈值裁剪低质量上下文；MMR 多样性重排打散同主题高相似结果；per-engine `min_score` / `max_size`，`show_meta` 展示来源与分数 |
 | **时间范围** | `smartsearch` 工具支持 `time_range` 参数（月为单位），API 引擎统一支持时间范围过滤 |
 | **SearXNG 兼容** | `/searxng/search` 端点，可对接 LiteLLM |
 
@@ -185,8 +187,14 @@ Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install
 
 ```yaml
 smartsearch:
-  max_size: 10        # 全局最大结果数（按 score 排序后截断），0 = 不限
-  show_meta: true      # 输出中显示引擎来源和相关性分数（默认 true）
+  max_size: 10           # 全局最大结果数（按 score 排序后截断），0 = 不限
+  show_meta: true        # 输出中显示引擎来源和相关性分数（默认 true）
+  enhance: true          # 本地评分增强（RRF 融合 + 词汇对齐 + 域名品质 + 多层 Boost + 阀值过滤），默认 true
+  relevance_threshold: 0.05  # 增强后相关性阀值，低于此值过滤（Top-1 保护），默认 0.05
+  mmr:                       # MMR 多样性重排（打散同主题高相似结果）
+    enabled: true            # 总开关（默认 true）
+    lambda: 0.7              # 相关性权重 [0,1]，越高越偏相关性，越低越偏多样性（默认 0.7）
+    target_count: 0          # MMR 后目标条数，0 = 不额外截断（由 max_size 统一截断）
   engines:
     tavily_api:        # Tavily API（回传 score，可设 min_score）
       min_score: 0.5   # 最低相关性分数阈值，0 = 不过滤
@@ -259,6 +267,8 @@ apipool:
 | `engines` | []string | ❌ | 引擎子集：`arxiv` `crossref` `openalex` `pubmed` `semantic_scholar` `google_scholar` |
 | `time_range` | string | ❌ | `year` / `month` / `week` / `day` |
 | `page` | int | ❌ | 页码，默认 1 |
+
+结果按学术评分增强排序（默认开启）：RRF 融合排名 + 引用数 / 期刊权威 / PDF 全文 / 新鲜度信号，低分论文自动过滤（Top-1 + 每引擎保底）。配置项：`academic.enhance`（默认 true）、`academic.threshold`（默认 0.02）。
 
 ### `cleanfetch` — 网页内容抓取
 

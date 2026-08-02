@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"websearch/pkg/config"
 	md "websearch/pkg/xml"
 )
 
@@ -24,6 +26,7 @@ type HybridSearchImpl struct {
 	engineNames []string                // 与 engines 一一对应的引擎名
 	enhance          bool               // 是否启用 Wigolo 本地评分增强
 	relevanceThreshold float64          // 增强后的相关性阀值
+	mmr              config.MMRConfig   // MMR 多样性重排配置（Enabled=false 时不重排）
 }
 
 // indexedResult 并发搜索时单个引擎的结果。
@@ -55,6 +58,11 @@ func (h *HybridSearchImpl) SetMaxSize(n int) {
 func (h *HybridSearchImpl) SetEnhance(enabled bool, threshold float64) {
 	h.enhance = enabled
 	h.relevanceThreshold = threshold
+}
+
+// SetMMR 设置 MMR 多样性重排配置（仅在评分增强启用时生效）。
+func (h *HybridSearchImpl) SetMMR(mmr config.MMRConfig) {
+	h.mmr = mmr
 }
 
 func (h *HybridSearchImpl) Name() string { return "hybrid" }
@@ -214,9 +222,9 @@ func (h *HybridSearchImpl) mergeResults(query string, ch <-chan indexedResult) (
 		}
 	}
 
-	// 评分增强流水线：RRF 融合 + 局部信号 + 多层 Boost + 阀值过滤
+	// 评分增强流水线：RRF 融合 + 局部信号 + 多层 Boost + 阀值过滤 + MMR 重排
 	if h.enhance {
-		enhanced := EnhanceResults(query, buckets, h.relevanceThreshold, h.maxSize)
+		enhanced := EnhanceResultsMMR(query, buckets, h.relevanceThreshold, h.maxSize, h.mmr)
 		if len(enhanced) == 0 {
 			return nil, fmt.Errorf("所有搜索引擎均未返回有效结果")
 		}

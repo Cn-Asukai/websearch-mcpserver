@@ -112,6 +112,8 @@ google:
 academic:
   enabled: true # 学术引擎总开关（默认 true）
   bing_fallback: false # 学术搜索时用 Bing 兜底（默认 true）
+  enhance: true # 学术搜索评分增强（RRF 融合 + 引用数/期刊权威/PDF/新鲜度信号），默认 true
+  threshold: 0.02 # 学术结果阀值（比通用搜索更宽松），默认 0.02
   # 各引擎独立禁用（默认 false = 启用）
   disable_arxiv: false
   disable_crossref: false
@@ -212,6 +214,10 @@ log:
 #   show_meta: true       # 输出中是否显示引擎来源和相关性分数（默认 true）
 #   enhance: true         # 是否启用本地评分增强（RRF 融合 + 词汇对齐 + 域名品质 + 多层 Boost + 阀值过滤），默认 true
 #   relevance_threshold: 0.05  # 增强后相关性阀值，final_score < 该值的结果被过滤（Top-1/每引擎保底不受影响），默认 0.05
+#   mmr:                       # MMR 多样性重排（打散同话题的高相似结果，如转载/镜像站）
+#     enabled: true            # 总开关（默认 true）
+#     lambda: 0.7              # 相关性-多样性权衡系数 [0,1]，越高越偏相关性，越低越偏多样性（默认 0.7）
+#     target_count: 0          # MMR 后目标条数，0 = 不额外截断（由 max_size 统一截断）
 #   engines:              # 按引擎名配置（引擎名: tavily_api, exa, baidu_api, baidu, bing, google, duckduckgo）
 #     tavily_api:
 #       min_score: 0.5    # Tavily API 最低相关性分数阈值（0 = 不过滤）

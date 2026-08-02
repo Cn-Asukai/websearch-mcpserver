@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"websearch/pkg/config"
 	"websearch/pkg/log"
 )
 
@@ -85,8 +86,15 @@ type urlAgg struct {
 }
 
 // EnhanceResults 对多引擎按引擎排序的结果桶执行完整评分流水线，
-// 返回统一评分、去重、过滤、排序、截断后的结果。
+// 返回统一评分、去重、过滤、排序、截断后的结果（不启用 MMR 重排）。
 func EnhanceResults(query string, buckets []scoreBucket, threshold float64, maxSize int) []SearchResult {
+	return EnhanceResultsMMR(query, buckets, threshold, maxSize, config.MMRConfig{})
+}
+
+// EnhanceResultsMMR 在 EnhanceResults 基础上支持 MMR 多样性重排：
+// 评分排序 → ApplyScoreFloor 阀值过滤 → MMR 重排 → maxSize 截断。
+// mmr.Enabled 为 false 时行为与 EnhanceResults 完全一致。
+func EnhanceResultsMMR(query string, buckets []scoreBucket, threshold float64, maxSize int, mmr config.MMRConfig) []SearchResult {
 	hasError := HasErrorToken(query)
 	temporal := HasTemporalIntent(query)
 
@@ -154,12 +162,21 @@ func EnhanceResults(query string, buckets []scoreBucket, threshold float64, maxS
 	before := len(scored)
 	scored = ApplyScoreFloor(scored, threshold)
 
+	// MMR 多样性重排（阀值过滤之后、maxSize 截断之前）
+	if mmr.Enabled {
+		targetN := mmr.TargetCount
+		if targetN <= 0 {
+			targetN = len(scored)
+		}
+		scored = ApplyMMR(scored, mmr.Lambda, targetN)
+	}
+
 	if maxSize > 0 && len(scored) > maxSize {
 		scored = scored[:maxSize]
 	}
 
-	log.Infof("Wigolo 评分增强: intent=%s error=%v temporal=%v 去重后=%d 过滤后=%d 返回=%d",
-		classifyIntent(query), hasError, temporal, before, len(scored), len(scored))
+	log.Infof("Wigolo 评分增强: intent=%s error=%v temporal=%v mmr=%v 去重后=%d 过滤后=%d 返回=%d",
+		classifyIntent(query), hasError, temporal, mmr.Enabled, before, len(scored), len(scored))
 	return scored
 }
 

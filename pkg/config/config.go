@@ -135,6 +135,8 @@ type RateLimitConfig struct {
 type AcademicConfig struct {
 	Enabled      bool `mapstructure:"enabled"`       // 学术引擎总开关（默认 true）
 	BingFallback bool `mapstructure:"bing_fallback"` // 学术搜索时用 Bing 兜底（默认 true）
+	Enhance      bool `mapstructure:"enhance"`       // 学术搜索评分增强（RRF 融合 + 引用数/期刊权威/PDF/新鲜度信号），默认 true
+	Threshold    float64 `mapstructure:"threshold"`  // 学术结果阀值（比通用搜索更宽松），默认 0.02
 
 	// 各引擎独立禁用（默认 false = 启用）
 	DisableArxiv           bool `mapstructure:"disable_arxiv"`
@@ -298,7 +300,17 @@ type SmartSearchConfig struct {
 	ShowMeta bool                        `mapstructure:"show_meta"` // 输出中是否显示引擎来源和 score（默认 true）
 	Enhance  *bool                        `mapstructure:"enhance"`   // 是否启用 Wigolo 本地评分增强（RRF+词汇对齐+域名品质+多层 Boost），默认 true
 	RelevanceThreshold float64           `mapstructure:"relevance_threshold"` // 增强评分后的相关性阀值，低于此值丢弃（Top-1/每引擎保底），默认 0.05
+	MMR             MMRConfig            `mapstructure:"mmr"`                 // MMR 多样性重排配置
 	Engines  map[string]SmartSearchEngine `mapstructure:"engines"`   // 按引擎名配置
+}
+
+// MMRConfig MMR（Maximal Marginal Relevance）多样性重排配置。
+// 在评分流水线阀值过滤之后、maxSize 截断之前执行，
+// 用于打散同一话题的多条高相似结果。
+type MMRConfig struct {
+	Enabled     bool    `mapstructure:"enabled"`      // MMR 重排开关（默认 true）
+	Lambda      float64 `mapstructure:"lambda"`       // 相关性-多样性权衡系数 [0,1]，越高越偏相关性，默认 0.7
+	TargetCount int     `mapstructure:"target_count"` // MMR 后的目标条数，0 = 不额外截断（由 max_size 统一截断）
 }
 
 // SmartSearchEngine 单引擎的 smartsearch 配置。
@@ -486,6 +498,13 @@ func Load(configPath string) (*Config, error) {
 	if !viper.IsSet("academic.bing_fallback") {
 		conf.Academic.BingFallback = true
 	}
+	// 学术搜索评分增强默认开启，阀值比通用搜索更宽松
+	if !viper.IsSet("academic.enhance") {
+		conf.Academic.Enhance = true
+	}
+	if conf.Academic.Threshold <= 0 {
+		conf.Academic.Threshold = 0.02
+	}
 	// 网络区域默认 china
 	if conf.Network == "" {
 		conf.Network = "china"
@@ -529,6 +548,13 @@ func Load(configPath string) (*Config, error) {
 	}
 	if conf.SmartSearch.RelevanceThreshold <= 0 {
 		conf.SmartSearch.RelevanceThreshold = 0.05 // 默认相关性阀值
+	}
+	// MMR 多样性重排默认开启，λ=0.7
+	if !viper.IsSet("smartsearch.mmr.enabled") {
+		conf.SmartSearch.MMR.Enabled = true
+	}
+	if !viper.IsSet("smartsearch.mmr.lambda") {
+		conf.SmartSearch.MMR.Lambda = 0.7
 	}
 
 	return &conf, nil

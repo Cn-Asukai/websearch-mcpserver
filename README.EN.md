@@ -21,7 +21,9 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 - **System proxy auto-detection** — reads Windows registry / environment variables by default; Clash and similar proxy software enable DuckDuckGo, academic engines, Jina Reader automatically without manual configuration
 - **Smart rate-limit retry** — all HTTP clients handle 429 responses automatically (reads `Retry-After` header); arXiv engine has a built-in 1 req/s limiter
 - **Multi-engine parallel orchestration** — academic search fires requests to multiple engines concurrently with URL dedup + normalized grouping; hybrid mode mixes native engines
-- **Intelligent relevance scoring** — RRF fusion ranking across engines, combined with lexical alignment, rare-term/phrase contiguity matching, domain-quality penalties (down-weighting brand/e-commerce/dictionary mismatches), and multi-engine consensus / authority-site / recency boosts; a global low-score threshold truly prunes low-quality context (Top-1 protected, at least 2 kept), fully heuristic with no AI model required
+- **Intelligent relevance scoring** — RRF fusion ranking across engines, combined with lexical alignment, rare-term/phrase contiguity matching, domain-quality penalties (down-weighting brand/e-commerce/dictionary mismatches), and multi-engine consensus / authority-site / recency boosts; a global low-score threshold truly prunes low-quality context (Top-1 protected, at least 2 kept), fully heuristic with no AI model required; **MMR diversity re-ranking** (default λ=0.7) breaks up highly similar same-topic results (mirror/repost sites)
+- **Academic search scoring** — six academic engines fused via RRF with citation count (log-compressed), high-impact journal/conference, PDF availability and recency signals; low-score papers auto-filtered (Top-1 + per-engine floor)
+- **LLM summary streaming** — the summary stage pushes tokens in real time via MCP progress notifications; auto-cancels on client disconnect and falls back to non-streaming summary on failure
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
 - **Enhanced web fetching** — based on go-webfetch, no proxy needed; TLS fingerprint spoofing (Chrome 131) + retry backoff + system proxy support; built-in SSRF protection, DNS rebinding detection, HEAD pre-check for large files and WAF detection; large content auto-stored to temp files
 - **MinerU AI-enhanced PDF parsing** — optional MinerU integration for intelligent table/formula/multi-column/image recognition; with Token uses Standard API (≤200MB), without Token auto-degrades to Agent Lightweight API (≤10MB), silently falls back to local parsing on failure
@@ -34,13 +36,13 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 | Category | Capabilities |
 |----------|-------------|
 | **General Search** | Baidu Qianfan, Baidu Web Search (built-in), Tavily, Exa, Bing (built-in), DuckDuckGo (auto-detects proxy), Google (disabled by default, needs explicit enable) |
-| **Academic Search** | arXiv, Crossref, OpenAlex, PubMed (direct from China) + Semantic Scholar, Google Scholar (auto-detects proxy) |
+| **Academic Search** | arXiv, Crossref, OpenAlex, PubMed (direct from China) + Semantic Scholar, Google Scholar (auto-detects proxy); RRF fusion + citation / journal / PDF / recency signal scoring with low-score filtering (per-engine floor) |
 | **MCP Tools** | `smartsearch` web search · `academicsearch` paper search · `cleanfetch` web fetch · `pdf_parser` PDF parsing |
 | **Caching** | SQLite auto-cache, 6h expiry, background cleanup |
-| **LLM Summary** | Optional OpenAI-compatible API integration for structured summaries |
+| **LLM Summary** | Optional OpenAI-compatible API integration for structured summaries; token-by-token streaming via MCP progress notifications |
 | **Site Blocking** | Global `black_list_host`, auto-filters low-quality sites |
 | **Global Rate Limit** | `rate_limit` unified config for all search engines |
-| **Relevance Scoring** | RRF fusion ranking + domain-quality / lexical-alignment / consensus / authority / recency boosts, global low-score threshold prunes low-quality context; per-engine `min_score` / `max_size`, `show_meta` displays source and score |
+| **Relevance Scoring** | RRF fusion ranking + domain-quality / lexical-alignment / consensus / authority / recency boosts, global low-score threshold prunes low-quality context; MMR diversity re-ranking breaks up same-topic similar results; per-engine `min_score` / `max_size`, `show_meta` displays source and score |
 | **Time Range** | `smartsearch` tool supports `time_range` parameter (in months); API engines unified time range filtering |
 | **SearXNG Compatible** | `/searxng/search` endpoint, works with LiteLLM |
 
@@ -185,8 +187,14 @@ The `smartsearch` section controls result filtering, truncation, and output form
 
 ```yaml
 smartsearch:
-  max_size: 10        # Global max results (truncated by score), 0 = unlimited
-  show_meta: true      # Show engine source and relevance score in output (default true)
+  max_size: 10           # Global max results (truncated by score), 0 = unlimited
+  show_meta: true        # Show engine source and relevance score in output (default true)
+  enhance: true          # Local scoring enhancement (RRF fusion + lexical alignment + domain quality + boosts + threshold), default true
+  relevance_threshold: 0.05  # Relevance threshold after enhancement; below this is filtered (Top-1 protected), default 0.05
+  mmr:                       # MMR diversity re-ranking (breaks up same-topic similar results)
+    enabled: true            # Master switch (default true)
+    lambda: 0.7              # Relevance weight [0,1]; higher = more relevance, lower = more diversity (default 0.7)
+    target_count: 0          # Target count after MMR; 0 = no extra truncation (max_size applies)
   engines:
     tavily_api:        # Tavily API (returns score, supports min_score)
       min_score: 0.5   # Minimum relevance score threshold, 0 = no filter
@@ -259,6 +267,8 @@ Results include engine source and relevance score by default (for engines that s
 | `engines` | []string | ❌ | Engine subset: `arxiv` `crossref` `openalex` `pubmed` `semantic_scholar` `google_scholar` |
 | `time_range` | string | ❌ | `year` / `month` / `week` / `day` |
 | `page` | int | ❌ | Page number, default 1 |
+
+Results are ranked by the academic scoring enhancement (enabled by default): RRF fusion ranking + citation / journal authority / PDF availability / recency signals, with low-score papers auto-filtered (Top-1 + per-engine floor). Config: `academic.enhance` (default true), `academic.threshold` (default 0.02).
 
 ### `cleanfetch` — Web Content Fetch
 

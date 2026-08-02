@@ -94,6 +94,31 @@ func tokenSet(s string) map[string]struct{} {
 	return set
 }
 
+// JaccardSimilarity 计算两段文本的 Token Jaccard 相似度 [0,1]。
+// 用于 MMR 多样性重排：相似度 = |tokens(a) ∩ tokens(b)| / |tokens(a) ∪ tokens(b)|。
+// 空集合或完全无交集返回 0。
+func JaccardSimilarity(a, b string) float64 {
+	return jaccardSets(tokenSet(a), tokenSet(b))
+}
+
+// jaccardSets 计算两个词元集合的 Jaccard 相似度。
+func jaccardSets(a, b map[string]struct{}) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	inter := 0
+	for t := range a {
+		if _, ok := b[t]; ok {
+			inter++
+		}
+	}
+	union := len(a) + len(b) - inter
+	if union == 0 {
+		return 0
+	}
+	return float64(inter) / float64(union)
+}
+
 // LexicalAlignment 计算 query 与 title+snippet 的词汇重叠率 [0,1]。
 // 重叠率 = query 词元中出现在文档词元集合里的比例。
 func LexicalAlignment(query, title, snippet string) float64 {

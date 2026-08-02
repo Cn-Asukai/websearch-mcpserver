@@ -83,12 +83,12 @@ func GetWebFetch() *webfetch.Fetcher {
 
 // WebSearchWithIntent LLM 启用时的 tool handler。
 func WebSearchWithIntent(ctx context.Context, req *mcp.CallToolRequest, params *SearchParamsWithIntent) (*mcp.CallToolResult, any, error) {
-	return doWebSearch(params.Query, params.Intent, params.TimeRange)
+	return doWebSearch(ctx, req, params.Query, params.Intent, params.TimeRange)
 }
 
 // WebSearchNoIntent LLM 未启用时的 tool handler。
 func WebSearchNoIntent(ctx context.Context, req *mcp.CallToolRequest, params *SearchParamsNoIntent) (*mcp.CallToolResult, any, error) {
-	return doWebSearch(params.Query, "", params.TimeRange)
+	return doWebSearch(ctx, req, params.Query, "", params.TimeRange)
 }
 
 // AcademicSearchHandler 学术搜索 tool handler。
@@ -98,7 +98,8 @@ func AcademicSearchHandler(ctx context.Context, req *mcp.CallToolRequest, params
 
 // doWebSearch 通用网页搜索逻辑。
 // timeRangeMonths 控制搜索时间范围（月），默认 3，0 表示不限。
-func doWebSearch(query, intent string, timeRangeMonths int) (*mcp.CallToolResult, any, error) {
+// 摘要阶段优先流式推送（MCP progress notification），客户端可实时看到生成过程。
+func doWebSearch(ctx context.Context, req *mcp.CallToolRequest, query, intent string, timeRangeMonths int) (*mcp.CallToolResult, any, error) {
 	if searchapi == nil {
 		return nil, nil, fmt.Errorf("api 初始化未完成")
 	}
@@ -176,9 +177,19 @@ func doWebSearch(query, intent string, timeRangeMonths int) (*mcp.CallToolResult
 		results = postSearchFilter(results, engineName)
 	}
 
-	// 有 intent 且 LLM 可用 → 生成摘要
+	// 有 intent 且 LLM 可用 → 生成摘要（优先流式推送，失败回退非流式）
 	if intent != "" && summarizerInst != nil {
-		output, sumErr := summarizerInst.Summarize(query, intent, results)
+		var output string
+		var sumErr error
+		if req != nil && req.Session != nil {
+			output, sumErr = streamSummarize(ctx, req, query, intent, results)
+			if sumErr != nil {
+				log.Errf("LLM 流式摘要失败，回退到非流式摘要: %v", sumErr)
+			}
+		}
+		if sumErr != nil {
+			output, sumErr = summarizerInst.Summarize(query, intent, results)
+		}
 		if sumErr == nil {
 			if cacheInst != nil {
 				_ = cacheInst.Store(query, intent, false, results, output)
@@ -244,6 +255,58 @@ func doAcademicSearch(query string, engines []string, timeRange string, page int
 		_ = cacheInst.Store(cacheKey, "", true, results, "")
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
+}
+
+// streamSummarize 流式生成摘要：通过 MCP progress notification 逐 token 推送，
+// 同时累积全文，流结束后返回完整格式化摘要（含引用）。
+// 客户端断开（ctx 取消）时自动中止。
+func streamSummarize(ctx context.Context, req *mcp.CallToolRequest, query, intent string, results []search.SearchResult) (string, error) {
+	notifyProgress(ctx, req, 1, 2, fmt.Sprintf("搜索完成，共 %d 条结果，正在生成摘要...", len(results)))
+
+	ch := make(chan string, 64)
+	errCh := make(chan error, 1)
+	go summarizerInst.SummarizeStream(ctx, query, intent, results, ch, errCh)
+
+	var sb strings.Builder
+	for {
+		select {
+		case token, ok := <-ch:
+			if !ok {
+				// 流结束；errCh 可能已发送结果（缓冲 1，非阻塞读取）
+				select {
+				case err := <-errCh:
+					if err != nil {
+						return "", err
+					}
+				default:
+				}
+				return summarizer.FormatCitation(query, sb.String(), results), nil
+			}
+			sb.WriteString(token)
+			notifyProgress(ctx, req, 2, 2, token)
+		case err := <-errCh:
+			return "", err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+}
+
+// notifyProgress 向 MCP 客户端推送进度通知（StreamableHTTP 传输下实时到达）。
+// 推送失败仅记录日志，不影响主流程。
+func notifyProgress(ctx context.Context, req *mcp.CallToolRequest, progress, total float64, message string) {
+	if req == nil || req.Session == nil {
+		return
+	}
+	params := &mcp.ProgressNotificationParams{
+		ProgressToken: req.Params.GetProgressToken(),
+		Progress:      progress,
+		Total:         total,
+		Message:       message,
+	}
+	if err := req.Session.NotifyProgress(ctx, params); err != nil {
+		log.Debugf("progress notification 推送失败: %v", err)
+	}
 }
 
 func formatAcademicResults(query string, results []search.SearchResult) (string, error) {

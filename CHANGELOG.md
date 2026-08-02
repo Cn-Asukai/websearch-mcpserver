@@ -2,11 +2,19 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
-## v2.14.0 — 2026-07-24
+## v2.14.0 — 2026-08-02
 
 ### 新增
 - **智能相关性评分管线（Wigolo）**：多引擎结果采用 RRF（Reciprocal Rank Fusion, K=60）融合排名，叠加词汇对齐、稀有词/短语连续匹配、域名品质惩罚、多引擎共识 / 权威站 / 时效性加分，纯启发式无需 AI 模型
   - 新增 `enhance.go`（RRF / ConsensusBoost / ApplyScoreFloor）、`enhance_domain.go`（DomainQuality / AuthorityBoost）、`enhance_text.go`（LexicalAlignment / RareTermsFactor）、`enhance_intent.go`（意图分类）
+- **MMR 多样性重排**：评分流水线阀值过滤之后、maxSize 截断之前执行贪心 MMR 重排（Token Jaccard 相似度），打散同一话题的高相似结果（转载站/镜像站/同源博客），Top-1 保护
+  - 新增 `mmr.go`（ApplyMMR）、`enhance_text.go` 导出 `JaccardSimilarity`
+  - 配置项：`smartsearch.mmr.enabled`（默认 true）、`lambda`（默认 0.7）、`target_count`（默认 0）
+- **学术搜索评分增强**：六大学术引擎结果采用 RRF 融合排名，叠加学术特有信号——引用数（对数压缩，clamp [1.0, 1.7]）、高影响力期刊/会议加分、PDF 全文可用性、新鲜度因子（时间敏感查询时近 1 年 ×1.15）；低分论文自动过滤（Top-1 + 每引擎保底）
+  - 新增 `academic_enhance.go`（EnhanceAcademicResults / CiteFactor / JournalBoost / AcademicRecencyFactor）；OpenAlex / Semantic Scholar 回传的 relevance score 参与引擎内排名
+  - 配置项：`academic.enhance`（默认 true）、`academic.threshold`（默认 0.02），独立于 smartsearch（四个工具配置解耦）
+- **LLM 摘要流式推送**：`smartsearch` 摘要阶段通过 MCP `notifications/progress` 逐 token 实时推送生成过程（搜索完成 → 阶段通知 → token 流），客户端断开自动取消，失败自动回退非流式摘要
+  - `pkg/llm` 新增 `ChatStream`（OpenAI 兼容 SSE 流式接口）、`pkg/summarizer` 新增 `SummarizeStream`
 
 ### 变更
 - **低质量上下文真正被裁剪**：修正 `ApplyScoreFloor`，移除“每引擎保底保留”逻辑，score 低于全局阈值（默认 0.05）的结果被丢弃，仅保留 Top-1（并保证最少 2 条）
@@ -17,6 +25,8 @@
 
 ### 测试
 - 新增 `TestEnhanceFiltersLowQuality` 观测性测试，实测低质量结果被裁剪（5→2）
+- 新增 MMR 测试（Top-1 保护 / 多样性打散 / λ=1 退化 / targetN 截断）与学术增强测试（引用数 / 期刊 / 新鲜度信号 / 每引擎保底）
+- 新增 `ChatStream` 单元测试（httptest mock SSE 服务：正常流 / HTTP 错误 / ctx 取消 / 畸形行跳过）
 - 百度实时 API 集成测试改为环境不可用（网络/鉴权/配额/空结果）时 skip，避免 `go test ./...` 因外部依赖不可用而失败
 
 ## v2.13.0 — 2026-07-19

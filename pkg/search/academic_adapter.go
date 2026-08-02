@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +21,16 @@ import (
 // AcademicAdapter 将学术引擎适配为 AcademicSearcher 接口。
 // 负责 arXiv、Crossref、OpenAlex、Semantic Scholar、PubMed、Google Scholar。
 type AcademicAdapter struct {
-	searcher *antirobot.Searcher
-	engines  []antirobot.Engine // 保存全部引擎引用，用于按名过滤
+	searcher  *antirobot.Searcher
+	engines   []antirobot.Engine // 保存全部引擎引用，用于按名过滤
+	enhance   bool               // 是否启用学术评分增强（RRF 融合 + 学术信号）
+	threshold float64            // 学术结果阀值（默认 0.02）
+}
+
+// SetEnhance 启用/关闭学术评分增强，threshold <= 0 时使用默认 0.02。
+func (a *AcademicAdapter) SetEnhance(enabled bool, threshold float64) {
+	a.enhance = enabled
+	a.threshold = threshold
 }
 
 // AcademicConfig 学术引擎配置。
@@ -96,13 +105,42 @@ func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearch
 
 	responses := searcher.Search(ctx, query, opt.Page)
 
+	// 保留 per-engine 排名信息（评分增强的 RRF 融合依赖各引擎内部顺序）
+	var buckets []scoreBucket
 	var all []antirobot.Result
 	for _, resp := range responses {
 		if resp.Error != "" {
 			continue
 		}
+		if a.enhance {
+			results := resp.Results
+			// 引擎回传 score（OpenAlex / Semantic Scholar）时按 score 降序作为排名
+			hasScore := false
+			for _, r := range results {
+				if r.Score > 0 {
+					hasScore = true
+					break
+				}
+			}
+			if hasScore {
+				sort.SliceStable(results, func(i, j int) bool {
+					return results[i].Score > results[j].Score
+				})
+			}
+			buckets = append(buckets, scoreBucket{name: resp.Engine, results: toSearchResults(results)})
+		}
 		all = append(all, resp.Results...)
 	}
+
+	// 学术评分增强：RRF 融合 + 引用数/期刊/PDF/新鲜度信号 + 阀值过滤
+	if a.enhance {
+		results := EnhanceAcademicResults(query, buckets, a.threshold, 0)
+		if len(results) == 0 {
+			return nil, fmt.Errorf("学术引擎搜索无结果")
+		}
+		return results, nil
+	}
+
 	all = antirobot.DeduplicateResults(all)
 	all = antirobot.NormalizeAndSortResults(all)
 
@@ -110,6 +148,11 @@ func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearch
 		return nil, fmt.Errorf("学术引擎搜索无结果")
 	}
 
+	return toSearchResults(all), nil
+}
+
+// toSearchResults 将 antirobot.Result 列表转换为 SearchResult 列表（保留学术元数据与 score）。
+func toSearchResults(all []antirobot.Result) []SearchResult {
 	results := make([]SearchResult, 0, len(all))
 	for _, r := range all {
 		results = append(results, SearchResult{
@@ -123,9 +166,10 @@ func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearch
 			Journal:     r.Journal,
 			CitedBy:     r.CitedBy,
 			PDFURL:      r.PDFURL,
+			Score:       r.Score,
 		})
 	}
-	return results, nil
+	return results
 }
 
 // MergeContent 格式化学术搜索结果为 Markdown。

@@ -2,11 +2,19 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
-## v2.14.0 — 2026-07-24
+## v2.14.0 — 2026-08-02
 
 ### Added
 - **Intelligent relevance scoring pipeline (Wigolo)**: multi-engine results use RRF (Reciprocal Rank Fusion, K=60) fusion ranking, combined with lexical alignment, rare-term/phrase contiguity matching, domain-quality penalties, and multi-engine consensus / authority-site / recency boosts — fully heuristic, no AI model required
   - Added `enhance.go` (RRF / ConsensusBoost / ApplyScoreFloor), `enhance_domain.go` (DomainQuality / AuthorityBoost), `enhance_text.go` (LexicalAlignment / RareTermsFactor), `enhance_intent.go` (intent classification)
+- **MMR diversity re-ranking**: greedy MMR re-ranking (Token Jaccard similarity) runs after threshold filtering and before `max_size` truncation, breaking up highly similar results on the same topic (mirror sites / reposts / same-source blogs), with Top-1 protection
+  - Added `mmr.go` (ApplyMMR); `enhance_text.go` exports `JaccardSimilarity`
+  - Config: `smartsearch.mmr.enabled` (default true), `lambda` (default 0.7), `target_count` (default 0)
+- **Academic search scoring enhancement**: six academic engines fused via RRF with academic-specific signals — citation count (log-compressed, clamped to [1.0, 1.7]), high-impact journal/conference boost, PDF availability, recency factor (×1.15 within 1 year for time-sensitive queries); low-score papers auto-filtered (Top-1 + per-engine floor)
+  - Added `academic_enhance.go` (EnhanceAcademicResults / CiteFactor / JournalBoost / AcademicRecencyFactor); relevance scores returned by OpenAlex / Semantic Scholar participate in per-engine ranking
+  - Config: `academic.enhance` (default true), `academic.threshold` (default 0.02), kept independent of `smartsearch` (decoupled tool configs)
+- **LLM summary streaming**: the `smartsearch` summary stage pushes tokens in real time via MCP `notifications/progress` (search complete → stage notification → token stream); auto-cancels on client disconnect and falls back to non-streaming summary on failure
+  - `pkg/llm` adds `ChatStream` (OpenAI-compatible SSE streaming); `pkg/summarizer` adds `SummarizeStream`
 
 ### Changed
 - **Low-quality context is truly pruned**: fixed `ApplyScoreFloor` by removing the "per-engine floor retention" logic; results scoring below the global threshold (default 0.05) are discarded, keeping only Top-1 (with a minimum of 2 results retained)
@@ -17,6 +25,8 @@
 
 ### Tests
 - Added `TestEnhanceFiltersLowQuality` observability test verifying low-quality results are pruned (5→2)
+- Added MMR tests (Top-1 protection / diversity / λ=1 degeneration / targetN truncation) and academic enhancement tests (citation / journal / recency signals / per-engine floor)
+- Added `ChatStream` unit tests (httptest mock SSE server: normal stream / HTTP error / ctx cancellation / malformed line skipping)
 - Baidu live-API integration tests now skip when the environment is unavailable (network/auth/quota/empty result), preventing `go test ./...` from failing on external dependency outages
 
 ## v2.13.0 — 2026-07-19
