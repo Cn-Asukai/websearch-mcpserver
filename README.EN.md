@@ -26,7 +26,7 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 - **LLM summary streaming** — the summary stage pushes tokens in real time via MCP progress notifications; auto-cancels on client disconnect and falls back to non-streaming summary on failure
 - **Smart fallback** — Baidu SK failure falls back to web search; primary engine failure falls back to Bing; LLM summary failure falls back to raw results; cleanfetch failure falls back to Jina Reader; cache errors are silently skipped
 - **Enhanced web fetching** — based on go-webfetch, no proxy needed; TLS fingerprint spoofing (Chrome 131) + retry backoff + system proxy support; built-in SSRF protection, DNS rebinding detection, HEAD pre-check for large files and WAF detection; large content auto-stored to temp files
-- **MinerU AI-enhanced PDF parsing** — optional MinerU integration for intelligent table/formula/multi-column/image recognition; with Token uses Standard API (≤200MB), without Token auto-degrades to Agent Lightweight API (≤10MB), silently falls back to local parsing on failure
+- **Local-first PDF + MinerU OCR fallback** — `pdf_parser` extracts text via the PDF library first; if no text layer (scanned/image PDFs) and `mineru_ocr` is enabled, falls back to MinerU OCR; with Token, remote URLs use the Standard API (≤200MB); without Token, Agent Lightweight API (≤10MB)
 - **Reference-counted process management** — multiple clients share one instance; auto-exits when count reaches zero
 - **Sub-agent extension** — optional companion [web-researcher](https://github.com/daidaiJ/web-researcher) extension offloads web research to a fast model sub-agent, zero context bloat for the main model (see [Qwen Code Sub-Agent Extension](#qwen-code-sub-agent-extension-web-researcher))
 - **Pure Go, no CGO** — SQLite via `modernc.org/sqlite`, single-binary deployment
@@ -286,9 +286,9 @@ Requires `cleanfetch.enabled: true`. Based on go-webfetch, no proxy needed; buil
 
 Requires `pdf_parser.enabled: true`. Large documents auto-stored to temp files.
 
-**MinerU AI Enhancement** (optional): configure `mineru_token` to enable MinerU parsing with intelligent table/formula/multi-column/image recognition.
-- With Token: Standard API, supports remote URLs (≤200MB/200 pages)
-- Without Token: Agent Lightweight API, local file signed upload (≤10MB/20 pages)
+**Parsing strategy**: local PDFs prefer the PDF library (ledongthuc/pdf) for text extraction; if there is no text layer and `mineru_ocr` is enabled, fall back to MinerU OCR.
+- `mineru_ocr: true`: OCR fallback for scanned / image-based PDFs (without Token uses Agent Lightweight API, ≤10MB/20 pages)
+- `mineru_token`: Standard API for remote URLs (≤200MB/200 pages); can also be used with OCR fallback
 - Get Token: https://mineru.net/apiManage
 - Environment variable: `MINERU_TOKEN`
 

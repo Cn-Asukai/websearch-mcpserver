@@ -65,3 +65,28 @@ func TestCacheEnabled(t *testing.T) {
 		})
 	}
 }
+
+func TestMinerUEnabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		cfg   PDFParserConfig
+		want  bool
+		wantOCR bool
+	}{
+		{"disabled", PDFParserConfig{}, false, false},
+		{"enabled only", PDFParserConfig{Enabled: true}, false, false},
+		{"token only", PDFParserConfig{MinerUToken: "tok"}, true, false},
+		{"ocr only", PDFParserConfig{MinerUOcr: true}, true, true},
+		{"token and ocr", PDFParserConfig{MinerUToken: "tok", MinerUOcr: true}, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.MinerUEnabled(); got != tt.want {
+				t.Errorf("MinerUEnabled() = %v, want %v", got, tt.want)
+			}
+			if got := tt.cfg.MinerUOCREnabled(); got != tt.wantOCR {
+				t.Errorf("MinerUOCREnabled() = %v, want %v", got, tt.wantOCR)
+			}
+		})
+	}
+}

@@ -173,9 +173,15 @@ type PDFParserConfig struct {
 	MinerULang    string `mapstructure:"mineru_lang"`    // 文档语言（默认 ch）
 }
 
-// MinerUEnabled 返回是否启用 MinerU 增强（有 Token 或 Enabled 时可用）。
+// MinerUEnabled 返回是否需要初始化 MinerU 客户端。
+// 有 Token（远程精准 API）或开启 OCR（扫描件回退）时启用。
 func (c PDFParserConfig) MinerUEnabled() bool {
-	return c.Enabled || c.MinerUToken != ""
+	return c.MinerUToken != "" || c.MinerUOcr
+}
+
+// MinerUOCREnabled 返回是否启用 MinerU OCR 回退（本地 PDF 库读不到文本时使用）。
+func (c PDFParserConfig) MinerUOCREnabled() bool {
+	return c.MinerUOcr
 }
 
 // GetMinerUModel 返回模型版本（默认 pipeline）。

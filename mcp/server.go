@@ -65,9 +65,11 @@ func RegisterRouter(mux *http.ServeMux, conf config.Config) {
 
 	// ── 注册 pdf_parser 工具（默认关闭） ──
 	if conf.PDFParser.Enabled && webfetchInst != nil {
-		pdfDesc := "本地 PDF 解析工具，将 PDF 文件转换为 Markdown。大文档自动存储到临时文件。"
-		if conf.PDFParser.MinerUEnabled() {
-			pdfDesc += "已启用 MinerU AI 增强解析（表格/公式/多栏识别）。"
+		pdfDesc := "本地 PDF 解析工具，优先用 PDF 库提取文本转为 Markdown；大文档自动存储到临时文件。"
+		if conf.PDFParser.MinerUOCREnabled() {
+			pdfDesc += "本地读不到文本时回退 MinerU OCR（扫描件/图片型 PDF）。"
+		} else if conf.PDFParser.MinerUToken != "" {
+			pdfDesc += "已配置 MinerU Token（远程 URL 可用精准解析）。"
 		}
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "pdf_parser",

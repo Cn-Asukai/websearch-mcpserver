@@ -28,8 +28,9 @@ type Result struct {
 
 // Fetcher 封装 go-webfetch Engine。
 type Fetcher struct {
-	engine *webfetch.Engine
-	mineru *mineru.Client
+	engine    *webfetch.Engine
+	mineru    *mineru.Client
+	mineruOCR bool // 本地 PDF 库读不到文本时是否回退 MinerU OCR
 }
 
 // NewFromConfig 根据配置创建 Fetcher。proxyURL 为代理地址，空字符串表示不使用代理（仍回退到环境变量）。
@@ -71,9 +72,9 @@ func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, p
 
 	log.Infof("WebFetch 引擎已启用 (output_dir=%s, ttl=%s, max_inline_lines=%d, timeout=%s)", outputDir, fileTTL, maxInlineLines, timeout)
 
-	f := &Fetcher{engine: engine}
+	f := &Fetcher{engine: engine, mineruOCR: pdfCfg.MinerUOCREnabled()}
 
-	// 初始化 MinerU 客户端（可选增强）
+	// 初始化 MinerU 客户端（有 Token 或开启 OCR 回退时）
 	if pdfCfg.MinerUEnabled() {
 		f.mineru = mineru.NewFromConfig(
 			pdfCfg.MinerUToken,
@@ -84,10 +85,10 @@ func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, p
 			pdfCfg.GetMinerUTable(),
 			proxyURL,
 		)
-		if pdfCfg.MinerUToken != "" {
-			log.Infof("MinerU 增强已启用 (精准解析 API, model=%s)", pdfCfg.GetMinerUModel())
-		} else {
-			log.Info("MinerU 增强已启用 (Agent 轻量 API, 无 Token)")
+		if pdfCfg.MinerUOcr {
+			log.Infof("MinerU OCR 回退已启用 (本地 PDF 库读不到文本时使用, model=%s)", pdfCfg.GetMinerUModel())
+		} else if pdfCfg.MinerUToken != "" {
+			log.Infof("MinerU 精准解析 API 已启用 (远程 URL, model=%s)", pdfCfg.GetMinerUModel())
 		}
 	}
 
@@ -96,7 +97,7 @@ func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, p
 
 // Fetch 抓取网页或解析 PDF（自动检测 file:// 路径）。
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Result, error) {
-	// 本地 PDF 文件
+	// 本地 PDF 文件：先本地 PDF 库抽文本，读不到再按需走 MinerU OCR
 	if strings.HasPrefix(rawURL, "file://") {
 		localPath := strings.TrimPrefix(rawURL, "file://")
 		// 处理 Windows 三斜杠格式 file:///C:/...
@@ -105,24 +106,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Result, error) {
 		}
 		localPath = strings.ReplaceAll(localPath, "/", string(os.PathSeparator))
 
-		// 优先尝试 MinerU Agent API（本地文件签名上传）
-		if f.mineru != nil {
-			md, err := f.mineru.ParseFile(ctx, localPath)
-			if err == nil {
-				return &Result{
-					Title:    filepath.Base(localPath),
-					Mode:     "inline",
-					Markdown: md,
-				}, nil
-			}
-			if errors.Is(err, mineru.ErrFileTooLarge) {
-				log.Infof("文件超过 MinerU Agent API 限制(10MB)，使用本地解析: %s", localPath)
-			} else {
-				log.Infof("MinerU 解析失败，回退本地解析: %v", err)
-			}
-		}
-
-		return f.parsePDFFile(ctx, localPath)
+		return f.parseLocalPDF(ctx, localPath)
 	}
 
 	// 远程 URL：有 Token 时优先尝试 MinerU 精准 API
@@ -152,6 +136,46 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Result, error) {
 	}, nil
 }
 
+// parseLocalPDF 本地 PDF：优先 ledongthuc/pdf 文本提取；无文本且开启 mineru_ocr 时回退 MinerU。
+func (f *Fetcher) parseLocalPDF(ctx context.Context, localPath string) (*Result, error) {
+	result, err := f.parsePDFFile(ctx, localPath)
+	if err == nil {
+		return result, nil
+	}
+
+	if !needsOCRFallback(err) {
+		return nil, err
+	}
+
+	if f.mineru == nil || !f.mineruOCR {
+		return nil, fmt.Errorf("%w（可能是扫描件/图片型 PDF，本地库无法提取文本；可在配置中开启 pdf_parser.mineru_ocr 以使用 MinerU OCR）", err)
+	}
+
+	log.Infof("本地 PDF 库未提取到文本，尝试 MinerU OCR: %s", localPath)
+	md, mineruErr := f.mineru.ParseFile(ctx, localPath)
+	if mineruErr == nil {
+		return &Result{
+			Title:    filepath.Base(localPath),
+			Mode:     "inline",
+			Markdown: md,
+		}, nil
+	}
+	if errors.Is(mineruErr, mineru.ErrFileTooLarge) {
+		return nil, fmt.Errorf("%w；MinerU OCR 回退失败: 文件超过 Agent API 限制(10MB)", err)
+	}
+	return nil, fmt.Errorf("%w；MinerU OCR 回退失败: %v", err, mineruErr)
+}
+
+// needsOCRFallback 判断本地解析失败是否因无文本层（扫描件等），适合 OCR 回退。
+func needsOCRFallback(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no text extracted") ||
+		strings.Contains(msg, "scanned/image-based PDF")
+}
+
 // parsePDFFile 解析本地 PDF 文件。
 func (f *Fetcher) parsePDFFile(ctx context.Context, filePath string) (*Result, error) {
 	res, err := f.engine.ParsePDFFile(ctx, filePath)
@@ -161,9 +185,13 @@ func (f *Fetcher) parsePDFFile(ctx context.Context, filePath string) (*Result, e
 	if res.Error != "" {
 		return nil, fmt.Errorf("PDF 解析失败: %s", res.Error)
 	}
+	mode := res.Mode
+	if mode == "" && res.Markdown != "" {
+		mode = "inline"
+	}
 	return &Result{
 		Title:      res.Title,
-		Mode:       res.Mode,
+		Mode:       mode,
 		Markdown:   res.Markdown,
 		FilePath:   res.FilePath,
 		TotalLines: res.TotalLines,

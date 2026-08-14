@@ -2,6 +2,17 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.15.0 — 2026-08-14
+
+### Changed
+- **pdf_parser local-first parsing**: local PDFs extract text via the PDF library (ledongthuc/pdf via go-webfetch) first and return immediately on success; MinerU is considered only when there is no text layer (scanned/image PDFs)
+- **On-demand MinerU OCR fallback**: requires explicit `pdf_parser.mineru_ocr`; without it, errors hint to enable OCR; with it, uses MinerU Agent/Standard API and preserves the local parse error if OCR fails
+- **MinerU client init condition**: changed from "`enabled` or Token" to "Token or `mineru_ocr`", so enabling pdf_parser alone no longer prefers MinerU upload for every local file
+- `PDFParserConfig` adds `MinerUOCREnabled()`; tool description and config examples updated for the new strategy
+
+### Tests
+- Added unit tests for `needsOCRFallback`, MinerU OCR init conditions, and OCR hint when OCR is disabled
+
 ## v2.14.0 — 2026-08-02
 
 ### Added

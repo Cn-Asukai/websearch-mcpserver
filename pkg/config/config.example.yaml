@@ -186,14 +186,15 @@ cleanfetch:
 # ==============================================
 pdf_parser:
   enabled: false            # 总开关（默认 false）
-  # MinerU AI 增强解析（可选）
-  # 有 Token: 精准解析 API（支持远程 URL，≤200MB/200页，ZIP 输出含 Markdown/JSON）
-  # 无 Token: Agent 轻量 API（本地文件签名上传，≤10MB/20页，仅 Markdown）
+  # MinerU 解析（可选）
+  # 本地 PDF：优先用 PDF 库抽文本；抽不到且 mineru_ocr=true 时回退 MinerU OCR
+  # 远程 URL：有 Token 时可用精准解析 API（≤200MB/200页）
+  # 无 Token + OCR：Agent 轻量 API（本地文件签名上传，≤10MB/20页）
   # 获取 Token: https://mineru.net/apiManage
   # 环境变量: MINERU_TOKEN
   # mineru_token: ""
   # mineru_model: "pipeline"  # pipeline(默认) / vlm(推荐，更精准)
-  # mineru_ocr: false         # OCR 识别（扫描件建议开启）
+  # mineru_ocr: false         # 扫描件 OCR 回退（本地库读不到文本时启用）
   # mineru_formula: true      # 公式识别（默认 true）
   # mineru_table: true        # 表格识别（默认 true）
   # mineru_lang: "ch"         # 文档语言（默认 ch，中英文）

@@ -2,6 +2,7 @@ package webfetch
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,6 +116,79 @@ func TestClassifyErrors(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNeedsOCRFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"no text extracted", fmt.Errorf("PDF 解析失败: no text extracted — possible causes: scanned"), true},
+		{"scanned mention", fmt.Errorf("scanned/image-based PDF (no text layer)"), true},
+		{"file not found", fmt.Errorf("PDF 解析失败: file not found: /tmp/x.pdf"), false},
+		{"other error", fmt.Errorf("PDF 解析失败: open pdf: corrupt"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := needsOCRFallback(tt.err); got != tt.want {
+				t.Errorf("needsOCRFallback(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewFromConfig_MinerUOCR(t *testing.T) {
+	fetcher, err := NewFromConfig(config.CleanFetchConfig{
+		Enabled: true,
+	}, config.PDFParserConfig{
+		Enabled:   true,
+		MinerUOcr: true,
+	}, "")
+	if err != nil {
+		t.Fatalf("NewFromConfig failed: %v", err)
+	}
+	defer fetcher.Close()
+
+	if fetcher.mineru == nil {
+		t.Error("expected mineru client when mineru_ocr=true")
+	}
+	if !fetcher.mineruOCR {
+		t.Error("expected mineruOCR=true")
+	}
+}
+
+func TestNewFromConfig_NoMinerUWithoutOCROrToken(t *testing.T) {
+	fetcher, err := NewFromConfig(config.CleanFetchConfig{
+		Enabled: true,
+	}, config.PDFParserConfig{
+		Enabled: true,
+	}, "")
+	if err != nil {
+		t.Fatalf("NewFromConfig failed: %v", err)
+	}
+	defer fetcher.Close()
+
+	if fetcher.mineru != nil {
+		t.Error("expected no mineru client when neither token nor ocr")
+	}
+	if fetcher.mineruOCR {
+		t.Error("expected mineruOCR=false")
+	}
+}
+
+func TestParseLocalPDF_OCRHintWithoutConfig(t *testing.T) {
+	fetcher := newTestFetcher(t)
+	defer fetcher.Close()
+
+	_, err := fetcher.parseLocalPDF(context.Background(), filepath.Join(os.TempDir(), "nonexistent-webfetch-ocr-test.pdf"))
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if strings.Contains(err.Error(), "mineru_ocr") {
+		t.Errorf("file-not-found should not suggest mineru_ocr: %v", err)
 	}
 }
 

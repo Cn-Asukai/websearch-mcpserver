@@ -2,6 +2,17 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v2.15.0 — 2026-08-14
+
+### 变更
+- **pdf_parser 本地优先解析**：本地 PDF 先用 PDF 库（ledongthuc/pdf via go-webfetch）提取文本，成功则直接返回；仅在无文本层（扫描件/图片型）时才考虑 MinerU
+- **MinerU OCR 按需回退**：需显式开启 `pdf_parser.mineru_ocr`；未开启时错误提示可配置 OCR；开启后走 MinerU Agent/精准 API，失败保留本地解析错误信息
+- **MinerU 客户端初始化条件**：由「`enabled` 或有 Token」改为「有 Token 或开启 `mineru_ocr`」，避免仅启用 pdf_parser 就对每个本地文件优先上传 MinerU
+- `PDFParserConfig` 新增 `MinerUOCREnabled()`；工具描述与配置示例同步说明新策略
+
+### 测试
+- 新增 `needsOCRFallback`、MinerU OCR 初始化条件、无 OCR 时错误提示等单元测试
+
 ## v2.14.0 — 2026-08-02
 
 ### 新增
