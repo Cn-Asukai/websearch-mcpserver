@@ -59,6 +59,8 @@
 
 ### 二进制下载
 
+**HTTP daemon**（`start` 后监听 `/mcp`）：
+
 | 平台 | 文件 |
 |------|------|
 | Linux x86_64 | `websearch-mcpserver-linux-amd64` |
@@ -66,7 +68,16 @@
 | macOS Intel | `websearch-mcpserver-darwin-amd64` |
 | macOS Apple Silicon | `websearch-mcpserver-darwin-arm64` |
 
-SHA256 校验：每个 Release 附带 `SHA256SUMS.txt`。
+**stdio CLI**（由 MCP 客户端拉起，无 HTTP 端口）：
+
+| 平台 | 文件 |
+|------|------|
+| Linux x86_64 | `websearch-mcp-cli-linux-amd64` |
+| Windows x86_64 | `websearch-mcp-cli-windows-amd64.exe` |
+| macOS Intel | `websearch-mcp-cli-darwin-amd64` |
+| macOS Apple Silicon | `websearch-mcp-cli-darwin-arm64` |
+
+SHA256 校验：每个二进制旁附带对应 `.sha256`。
 
 Release 页面：https://github.com/daidaiJ/websearch-mcpserver/releases
 
@@ -93,8 +104,10 @@ services:
 
 ```bash
 go build -o websearch ./cmd/
+go build -o websearch-mcp-cli ./cmd/cli
 # 注入版本号
 go build -ldflags="-X main.version=v1.0.0" -o websearch ./cmd/
+go build -ldflags="-X main.version=v1.0.0" -o websearch-mcp-cli ./cmd/cli
 ```
 
 ### 注册 MCP 客户端
@@ -122,6 +135,34 @@ claude mcp add --transport http websearch http://localhost:8338/mcp
 ```bash
 # Cursor / 其他 MCP 客户端 — type=http, url=http://localhost:8338/mcp
 ```
+
+### stdio CLI
+
+不启动 HTTP 服务时，下载 `websearch-mcp-cli-*`，由客户端直接拉起进程（默认走 stdin/stdout）。无配置文件时使用 `mode: engine` 内存默认值。
+
+```bash
+# 可选：写出示例配置
+./websearch-mcp-cli init
+# 或指定路径
+./websearch-mcp-cli -c ~/.config/websearch/config.yaml init
+```
+
+```json
+{
+  "mcpServers": {
+    "websearch": {
+      "command": "/path/to/websearch-mcp-cli",
+      "args": ["-c", "/path/to/config.yaml"]
+    }
+  }
+}
+```
+
+无配置文件时可省略 `args`。日志写到 stderr 与配置目录下的 `websearch.log`，不会污染 stdout 上的 JSON-RPC。
+
+CLI 子命令：无参数 = stdio；`init` 写示例配置；`version` 显示版本。
+
+配置与 HTTP 共用同一 YAML；`port` 等差异见 [docs/config.md#stdio-cli-配置说明](docs/config.md#stdio-cli-配置说明)。
 
 ### Agent 快速部署
 
@@ -296,6 +337,8 @@ apipool:
 
 ## 子命令
 
+HTTP daemon 二进制 `websearch-mcpserver`：
+
 | 命令 | 说明 |
 |------|------|
 | `start` | 启动服务（ref=1 或 ref+1） |
@@ -310,11 +353,12 @@ CLI 参数：`-c, --config` 指定配置文件路径。
 
 ## 配置
 
-详见 [docs/config.md](docs/config.md) — 完整配置项、默认值、环境变量覆盖。
+详见 [docs/config.md](docs/config.md) — 完整配置项、默认值、环境变量覆盖；stdio CLI 特殊说明见 [stdio CLI 配置说明](docs/config.md#stdio-cli-配置说明)。
 
 **最小配置（零 Key 启动）**：
 
 ```yaml
+# HTTP daemon 需要 port；stdio CLI 可只写 mode
 port: 8338
 mode: engine
 ```

@@ -1,8 +1,153 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/spf13/viper"
+)
 
 func boolPtr(b bool) *bool { return &b }
+
+func TestDefault(t *testing.T) {
+	conf := Default()
+	if conf.GetMode() != ModeEngine {
+		t.Errorf("Default mode = %q, want %s", conf.GetMode(), ModeEngine)
+	}
+	if !conf.Bing.Enabled {
+		t.Error("Default Bing should be enabled")
+	}
+	if !conf.Academic.Enabled {
+		t.Error("Default Academic should be enabled")
+	}
+	if conf.Port != 8338 {
+		t.Errorf("Default Port = %d, want 8338", conf.Port)
+	}
+	if conf.CleanFetch.Enabled {
+		t.Error("Default CleanFetch should be disabled")
+	}
+	if conf.PDFParser.Enabled {
+		t.Error("Default PDFParser should be disabled")
+	}
+	if conf.Network != "china" {
+		t.Errorf("Default Network = %q", conf.Network)
+	}
+	if conf.SmartSearch.Enhance == nil || !*conf.SmartSearch.Enhance {
+		t.Error("Default smartsearch.enhance should be true")
+	}
+}
+
+func TestDefault_AppliesEnv(t *testing.T) {
+	t.Setenv("BAIDU_SK", "sk-test")
+	t.Setenv("TAVILY_SK", "tv-test")
+	t.Setenv("EXA_API_KEY", "exa-test")
+	t.Setenv("LLM_BASE_URL", "http://llm.local")
+	t.Setenv("LLM_API_KEY", "llm-key")
+	t.Setenv("MINERU_TOKEN", "mu-test")
+
+	conf := Default()
+	if conf.Baidu.APIKey != "sk-test" {
+		t.Errorf("Baidu.APIKey = %q", conf.Baidu.APIKey)
+	}
+	if conf.Tavily.APIKey != "tv-test" {
+		t.Errorf("Tavily.APIKey = %q", conf.Tavily.APIKey)
+	}
+	if conf.Exa.APIKey != "exa-test" {
+		t.Errorf("Exa.APIKey = %q", conf.Exa.APIKey)
+	}
+	if conf.LLM.BaseURL != "http://llm.local" || conf.LLM.APIKey != "llm-key" {
+		t.Errorf("LLM = %+v", conf.LLM)
+	}
+	if conf.PDFParser.MinerUToken != "mu-test" {
+		t.Errorf("MinerUToken = %q", conf.PDFParser.MinerUToken)
+	}
+	if conf.LLMEnabled() {
+		t.Error("LLMEnabled should be false without model_id")
+	}
+}
+
+func TestLoadOrDefault_MissingExplicitFile(t *testing.T) {
+	viper.Reset()
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	_, err := LoadOrDefault(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err == nil {
+		t.Fatal("expected error for missing explicit config file")
+	}
+}
+
+func TestLoadOrDefault_ReadsFile(t *testing.T) {
+	viper.Reset()
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("mode: engine\nport: 9001\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := LoadOrDefault(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Port != 9001 {
+		t.Errorf("Port = %d, want 9001", conf.Port)
+	}
+	if conf.GetMode() != ModeEngine {
+		t.Errorf("mode = %q", conf.GetMode())
+	}
+}
+
+func TestLoadOrDefault_WEBSEARCH_CONFIG(t *testing.T) {
+	viper.Reset()
+	path := filepath.Join(t.TempDir(), "from-env.yaml")
+	if err := os.WriteFile(path, []byte("mode: engine\nport: 9002\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WEBSEARCH_CONFIG", path)
+	conf, err := LoadOrDefault(filepath.Join(t.TempDir(), "ignored.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Port != 9002 {
+		t.Errorf("Port = %d, want 9002 (WEBSEARCH_CONFIG should win)", conf.Port)
+	}
+}
+
+func TestLoadOrDefault_InvalidYAML(t *testing.T) {
+	viper.Reset()
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(":\n  - broken"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadOrDefault(path)
+	if err == nil {
+		t.Fatal("expected parse error, not Default()")
+	}
+}
+
+func TestLoadOrDefault_FallsBackToDefault(t *testing.T) {
+	viper.Reset()
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	t.Chdir(t.TempDir())
+	conf, err := LoadOrDefault("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.GetMode() != ModeEngine {
+		t.Errorf("fallback mode = %q", conf.GetMode())
+	}
+}
+
+func TestExplicitConfigPath(t *testing.T) {
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	if got := explicitConfigPath("a.yaml"); got != "a.yaml" {
+		t.Errorf("got %q", got)
+	}
+	t.Setenv("WEBSEARCH_CONFIG", "/env/config.yaml")
+	if got := explicitConfigPath("a.yaml"); got != "/env/config.yaml" {
+		t.Errorf("env should win, got %q", got)
+	}
+}
 
 func TestCacheEnabled(t *testing.T) {
 	tests := []struct {
@@ -68,9 +213,9 @@ func TestCacheEnabled(t *testing.T) {
 
 func TestMinerUEnabled(t *testing.T) {
 	tests := []struct {
-		name  string
-		cfg   PDFParserConfig
-		want  bool
+		name    string
+		cfg     PDFParserConfig
+		want    bool
 		wantOCR bool
 	}{
 		{"disabled", PDFParserConfig{}, false, false},
@@ -88,5 +233,14 @@ func TestMinerUEnabled(t *testing.T) {
 				t.Errorf("MinerUOCREnabled() = %v, want %v", got, tt.wantOCR)
 			}
 		})
+	}
+}
+
+func TestExampleConfigIsYAML(t *testing.T) {
+	if len(ExampleConfig) == 0 {
+		t.Fatal("ExampleConfig is empty")
+	}
+	if !strings.Contains(string(ExampleConfig), "mode:") {
+		t.Error("ExampleConfig should contain mode")
 	}
 }

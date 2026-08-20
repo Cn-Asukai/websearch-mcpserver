@@ -11,20 +11,31 @@ import (
 	"websearch/pkg/config"
 )
 
-var defaultlog *zerolog.Logger
+var (
+	defaultlog *zerolog.Logger
+	fileWriter io.Closer
+)
 
-// 提供 Zerolog Logger，同时输出到控制台和滚动日志文件
+// NewLogger 同时输出到 stdout 控制台和滚动日志文件（HTTP daemon 使用）。
 func NewLogger(logDir string, logConf config.LogConfig) *zerolog.Logger {
-	consoleWriter := zerolog.ConsoleWriter{
-		Out:        os.Stdout,
-		TimeFormat: time.RFC3339,
-	}
+	return NewLoggerTo(os.Stdout, logDir, logConf)
+}
+
+// NewLoggerTo 将控制台日志写到 console（stdio CLI 应传 os.Stderr，避免污染 JSON-RPC）。
+// console 为 nil 时不写控制台；logDir 为空时不写文件。
+func NewLoggerTo(console io.Writer, logDir string, logConf config.LogConfig) *zerolog.Logger {
+	_ = CloseFile()
 
 	var writers []io.Writer
-	writers = append(writers, consoleWriter)
+	if console != nil {
+		writers = append(writers, zerolog.ConsoleWriter{
+			Out:        console,
+			TimeFormat: time.RFC3339,
+		})
+	}
 
 	if logDir != "" {
-		fileWriter := &lumberjack.Logger{
+		fw := &lumberjack.Logger{
 			Filename:   filepath.Join(logDir, "websearch.log"),
 			MaxSize:    logConf.MaxSize, // MB
 			MaxAge:     logConf.MaxAge,  // days
@@ -32,7 +43,12 @@ func NewLogger(logDir string, logConf config.LogConfig) *zerolog.Logger {
 			Compress:   false,
 			LocalTime:  true,
 		}
-		writers = append(writers, fileWriter)
+		fileWriter = fw
+		writers = append(writers, fw)
+	}
+
+	if len(writers) == 0 {
+		writers = append(writers, io.Discard)
 	}
 
 	multiWriter := zerolog.MultiLevelWriter(writers...)
@@ -41,7 +57,20 @@ func NewLogger(logDir string, logConf config.LogConfig) *zerolog.Logger {
 	return defaultlog
 }
 
+// CloseFile 关闭滚动日志文件句柄（Windows 上 TempDir/进程退出前需调用，否则文件会被占用）。
+func CloseFile() error {
+	if fileWriter == nil {
+		return nil
+	}
+	err := fileWriter.Close()
+	fileWriter = nil
+	return err
+}
+
 func SetLoggerLevel(lv string) {
+	if defaultlog == nil {
+		return
+	}
 	level := zerolog.InfoLevel
 	switch lv {
 	case "DEBUG", "debug":

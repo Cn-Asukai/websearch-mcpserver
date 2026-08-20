@@ -1,8 +1,11 @@
 package mcpserver
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 	"websearch/pkg/config"
@@ -11,16 +14,26 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func RegisterRouter(mux *http.ServeMux, conf config.Config) {
+// NewMCPServer 按配置注册 MCP 工具，返回可挂到任意 transport 的 *mcp.Server。
+func NewMCPServer(conf config.Config, opts *mcp.ServerOptions) *mcp.Server {
+	if opts == nil {
+		opts = &mcp.ServerOptions{}
+	}
+	if opts.KeepAlive == 0 {
+		opts.KeepAlive = 30 * time.Second
+	}
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "websearch server",
 		Version: "1.0.0",
-	}, &mcp.ServerOptions{
-		KeepAlive: 30 * time.Second,
-	})
+	}, opts)
 
 	server.AddReceivingMiddleware(createLoggingMiddleware())
+	registerTools(server, conf)
+	return server
+}
 
+func registerTools(server *mcp.Server, conf config.Config) {
 	// ── 注册 smartsearch 工具 ──
 	if conf.Bing.Enabled {
 		searchDesc := "通用联网检索工具，获取实时信息（新闻/技术文档/产品/数据等）。查询词需精准凝练、聚焦核心意图，避免堆砌大量同义/次要词形成关键词列表（会稀释相关性）。"
@@ -77,7 +90,10 @@ func RegisterRouter(mux *http.ServeMux, conf config.Config) {
 		}, PDFParserHandler)
 		log.Info("Available tool: pdf_parser")
 	}
+}
 
+func RegisterRouter(mux *http.ServeMux, conf config.Config) {
+	server := NewMCPServer(conf, nil)
 	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{
@@ -86,18 +102,32 @@ func RegisterRouter(mux *http.ServeMux, conf config.Config) {
 	mux.Handle("/mcp", http.StripPrefix("/mcp", handler))
 }
 
+// RunStdio 在 stdin/stdout 上运行 MCP（JSON-RPC NDJSON）。调用前须完成 Init。
+func RunStdio(ctx context.Context, conf config.Config) error {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	return runWithTransport(ctx, conf, &mcp.StdioTransport{}, logger)
+}
+
+func runWithTransport(ctx context.Context, conf config.Config, t mcp.Transport, logger *slog.Logger) error {
+	opts := &mcp.ServerOptions{}
+	if logger != nil {
+		opts.Logger = logger
+	}
+	return NewMCPServer(conf, opts).Run(ctx, t)
+}
+
 // buildAcademicToolDescription 动态构建学术搜索工具描述，列出实际可用的引擎。
 func buildAcademicToolDescription() string {
 	engines := academicSearcher.AcademicEngines()
 
 	// 引擎能力说明
 	engineDesc := map[string]string{
-		"arxiv":             "arXiv 预印本（CS/物理/数学）",
-		"crossref":          "Crossref 学术元数据（全学科，含 DOI/引用）",
-		"openalex":          "OpenAlex 开放学术图谱（全学科，含引用数/相关度评分）",
-		"semantic_scholar":  "Semantic Scholar（CS/AI，含引用数/相关度评分）",
-		"pubmed":            "PubMed 生物医学文献（医学/生命科学）",
-		"google_scholar":    "Google Scholar（全学科，含引用数/PDF）",
+		"arxiv":            "arXiv 预印本（CS/物理/数学）",
+		"crossref":         "Crossref 学术元数据（全学科，含 DOI/引用）",
+		"openalex":         "OpenAlex 开放学术图谱（全学科，含引用数/相关度评分）",
+		"semantic_scholar": "Semantic Scholar（CS/AI，含引用数/相关度评分）",
+		"pubmed":           "PubMed 生物医学文献（医学/生命科学）",
+		"google_scholar":   "Google Scholar（全学科，含引用数/PDF）",
 	}
 
 	var sb strings.Builder

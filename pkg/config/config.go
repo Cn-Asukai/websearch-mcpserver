@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -564,6 +565,89 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	return &conf, nil
+}
+
+// Default 返回零配置可用的内存默认值（mode=engine，Bing/学术默认开启）。
+func Default() *Config {
+	enhance := true
+	conf := &Config{
+		Port:    8338,
+		Mode:    ModeEngine,
+		Network: "china",
+		Log:     LogConfig{MaxSize: 1, MaxAge: 1},
+		Baidu:   BaiduConfig{EnableAISearch: true},
+		Bing:    BingConfig{Enabled: true},
+		DuckDuckGo: DuckDuckGoConfig{Enabled: true},
+		Academic: AcademicConfig{
+			Enabled:      true,
+			BingFallback: true,
+			Enhance:      true,
+			Threshold:    0.02,
+		},
+		CleanFetch: CleanFetchConfig{
+			FileTTL:        24,
+			MaxInlineLines: 100,
+			TimeoutSec:     30,
+			MaxFetchSizeMB: 10,
+			MaxRetries:     3,
+		},
+		SmartSearch: SmartSearchConfig{
+			ShowMeta:           true,
+			Enhance:            &enhance,
+			RelevanceThreshold: 0.05,
+			MMR: MMRConfig{
+				Enabled: true,
+				Lambda:  0.7,
+			},
+		},
+	}
+	applyKnownEnv(conf)
+	return conf
+}
+
+// LoadOrDefault 加载配置；未指定路径且找不到文件时返回 Default()。
+// 若 -c / WEBSEARCH_CONFIG 指向的文件不存在或无法解析，返回错误。
+func LoadOrDefault(configPath string) (*Config, error) {
+	if explicitConfigPath(configPath) != "" {
+		return Load(configPath)
+	}
+	conf, err := Load("")
+	if err == nil {
+		return conf, nil
+	}
+	var notFound viper.ConfigFileNotFoundError
+	if errors.As(err, &notFound) {
+		return Default(), nil
+	}
+	return nil, err
+}
+
+func explicitConfigPath(configPath string) string {
+	if env := os.Getenv("WEBSEARCH_CONFIG"); env != "" {
+		return env
+	}
+	return configPath
+}
+
+func applyKnownEnv(conf *Config) {
+	if v := os.Getenv("BAIDU_SK"); v != "" {
+		conf.Baidu.APIKey = v
+	}
+	if v := os.Getenv("TAVILY_SK"); v != "" {
+		conf.Tavily.APIKey = v
+	}
+	if v := os.Getenv("EXA_API_KEY"); v != "" {
+		conf.Exa.APIKey = v
+	}
+	if v := os.Getenv("LLM_BASE_URL"); v != "" {
+		conf.LLM.BaseURL = v
+	}
+	if v := os.Getenv("LLM_API_KEY"); v != "" {
+		conf.LLM.APIKey = v
+	}
+	if v := os.Getenv("MINERU_TOKEN"); v != "" {
+		conf.PDFParser.MinerUToken = v
+	}
 }
 
 func GetConfigDir() string {

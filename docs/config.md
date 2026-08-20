@@ -9,12 +9,44 @@
 2. CLI 参数 `-c / --config`
 3. 当前目录 `config.yaml`
 
-> 通过 `-c` 指定后，PID 文件和日志文件自动写到配置文件所在目录。
+> HTTP daemon：通过 `-c` 指定后，PID 文件和日志文件写到配置文件所在目录。  
+> stdio CLI：无 PID；日志写到配置目录下的 `websearch.log`（控制台日志在 **stderr**，避免污染 stdout 上的 JSON-RPC）。
+
+HTTP daemon（`websearch-mcpserver start`）与 stdio CLI（`websearch-mcp-cli`）**共用同一套 YAML**，搜索/工具字段含义相同。差异见下一节。
+
+## stdio CLI 配置说明
+
+stdio 二进制与 HTTP 服务使用同一配置 schema（`config.example.yaml` / `websearch-mcp-cli init` 写出的内容一致），**不必**单独维护一份 CLI 配置。
+
+| 项 | HTTP daemon | stdio CLI（`websearch-mcp-cli`） |
+|----|-------------|-------------------------------|
+| 配置是否必需 | `start` **必须**能读到配置文件 | **可选**：未找到文件时用内存默认值（`mode: engine`，Bing/学术默认开） |
+| `-c` / `WEBSEARCH_CONFIG` 指向不存在的文件 | 报错退出 | 报错退出（不会静默回落到默认值） |
+| `port` | 监听端口（默认 8338），admin / SearXNG 依赖 | **忽略**（不监听 HTTP） |
+| 日志控制台 | stdout | **stderr**（文件日志仍为 `websearch.log`） |
+| 进程管理 | `start`/`stop`/`kill`、refcount、PID、Windows `install` | 无；由 MCP 客户端拉起/结束进程 |
+| SearXNG `/searxng/search` | 有 | 无 |
+
+**推荐最小配置（stdio，零 Key）：**
+
+```yaml
+mode: engine
+# port 可省略；写了也不生效
+```
+
+也可用环境变量注入 Key（与 HTTP 相同）：`BAIDU_SK`、`TAVILY_SK`、`EXA_API_KEY`、`LLM_BASE_URL`、`LLM_API_KEY`、`MINERU_TOKEN` 等。无配置文件走内存默认时，上述 Key 类环境变量仍会被读取；完整字段默认值仍以「读配置文件 + Viper」路径为准。
+
+生成示例文件：
+
+```bash
+./websearch-mcp-cli init
+./websearch-mcp-cli -c ~/.config/websearch/config.yaml init
+```
 
 ## 完整配置
 
 ```yaml
-port: 8338                  # MCP HTTP 端口
+port: 8338                  # MCP HTTP 端口（stdio CLI 忽略此字段）
 log_level: info             # debug / info / warn / error
 mode: engine                # baidu / apipool / tavily / exa / hybrid / engine
 network: china              # china（跳过海外引擎） / international

@@ -59,6 +59,8 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 
 ### Binary Download
 
+**HTTP daemon** (`start`, then listen on `/mcp`):
+
 | Platform | File |
 |----------|------|
 | Linux x86_64 | `websearch-mcpserver-linux-amd64` |
@@ -66,7 +68,16 @@ An MCP search service built in Go with built-in Baidu web search, Bing, DuckDuck
 | macOS Intel | `websearch-mcpserver-darwin-amd64` |
 | macOS Apple Silicon | `websearch-mcpserver-darwin-arm64` |
 
-SHA256 checksums: each release includes `SHA256SUMS.txt`.
+**stdio CLI** (spawned by the MCP client, no HTTP port):
+
+| Platform | File |
+|----------|------|
+| Linux x86_64 | `websearch-mcp-cli-linux-amd64` |
+| Windows x86_64 | `websearch-mcp-cli-windows-amd64.exe` |
+| macOS Intel | `websearch-mcp-cli-darwin-amd64` |
+| macOS Apple Silicon | `websearch-mcp-cli-darwin-arm64` |
+
+SHA256 checksums: each binary has a matching `.sha256` file.
 
 Release page: https://github.com/daidaiJ/websearch-mcpserver/releases
 
@@ -93,8 +104,10 @@ services:
 
 ```bash
 go build -o websearch ./cmd/
+go build -o websearch-mcp-cli ./cmd/cli
 # With version injection
 go build -ldflags="-X main.version=v1.0.0" -o websearch ./cmd/
+go build -ldflags="-X main.version=v1.0.0" -o websearch-mcp-cli ./cmd/cli
 ```
 
 ### Register MCP Client
@@ -122,6 +135,34 @@ claude mcp add --transport http websearch http://localhost:8338/mcp
 ```bash
 # Cursor / other MCP clients — type=http, url=http://localhost:8338/mcp
 ```
+
+### stdio CLI
+
+To skip the HTTP daemon, download `websearch-mcp-cli-*` and let the client spawn the process (stdin/stdout by default). With no config file it uses in-memory defaults (`mode: engine`).
+
+```bash
+# Optional: write an example config
+./websearch-mcp-cli init
+# Or a specific path
+./websearch-mcp-cli -c ~/.config/websearch/config.yaml init
+```
+
+```json
+{
+  "mcpServers": {
+    "websearch": {
+      "command": "/path/to/websearch-mcp-cli",
+      "args": ["-c", "/path/to/config.yaml"]
+    }
+  }
+}
+```
+
+Omit `args` when running with defaults. Logs go to stderr and `websearch.log` under the config directory so they do not corrupt JSON-RPC on stdout.
+
+CLI commands: no args = stdio; `init` writes an example config; `version` prints the version.
+
+Config shares the same YAML as HTTP; see [docs/config.en.md#stdio-cli-configuration-notes](docs/config.en.md#stdio-cli-configuration-notes) for differences such as `port`.
 
 ### Agent Quick Deploy
 
@@ -296,6 +337,8 @@ Requires `pdf_parser.enabled: true`. Large documents auto-stored to temp files.
 
 ## Subcommands
 
+HTTP daemon binary `websearch-mcpserver`:
+
 | Command | Description |
 |---------|-------------|
 | `start` | Start service (ref=1 or ref+1) |
@@ -310,11 +353,12 @@ CLI flags: `-c, --config` to specify config file path.
 
 ## Configuration
 
-See [docs/config.en.md](docs/config.en.md) — full config options, defaults, environment variable overrides.
+See [docs/config.en.md](docs/config.en.md) — full config options, defaults, environment variable overrides; stdio-specific notes: [stdio CLI Configuration Notes](docs/config.en.md#stdio-cli-configuration-notes).
 
 **Minimal config (zero keys)**:
 
 ```yaml
+# HTTP daemon needs port; stdio CLI can use mode only
 port: 8338
 mode: engine
 ```

@@ -9,12 +9,44 @@ Priority (high to low):
 2. CLI flag `-c / --config`
 3. Current directory `config.yaml`
 
-> When specified via `-c`, PID file and log file are automatically written to the config file's directory.
+> HTTP daemon: with `-c`, the PID file and log file are written under the config file's directory.  
+> stdio CLI: no PID file; logs go to `websearch.log` in the config directory (console logs on **stderr** so they do not corrupt JSON-RPC on stdout).
+
+The HTTP daemon (`websearch-mcpserver start`) and the stdio CLI (`websearch-mcp-cli`) share the **same YAML schema**; search/tool fields mean the same thing. Differences are below.
+
+## stdio CLI Configuration Notes
+
+The stdio binary uses the same config schema as the HTTP service (`config.example.yaml` / what `websearch-mcp-cli init` writes). You do **not** need a separate CLI-only config file.
+
+| Item | HTTP daemon | stdio CLI (`websearch-mcp-cli`) |
+|------|-------------|-------------------------------|
+| Config required? | `start` **must** load a config file | **Optional**: if no file is found, in-memory defaults apply (`mode: engine`, Bing/academic on) |
+| `-c` / `WEBSEARCH_CONFIG` points to a missing file | Error and exit | Error and exit (does not silently fall back to defaults) |
+| `port` | Listen port (default 8338); admin / SearXNG depend on it | **Ignored** (no HTTP listener) |
+| Console logs | stdout | **stderr** (file log remains `websearch.log`) |
+| Process management | `start`/`stop`/`kill`, refcount, PID, Windows `install` | None; the MCP client starts/stops the process |
+| SearXNG `/searxng/search` | Yes | No |
+
+**Recommended minimal config (stdio, zero keys):**
+
+```yaml
+mode: engine
+# port may be omitted; it has no effect for stdio
+```
+
+Key env vars work the same as HTTP: `BAIDU_SK`, `TAVILY_SK`, `EXA_API_KEY`, `LLM_BASE_URL`, `LLM_API_KEY`, `MINERU_TOKEN`, etc. When running with in-memory defaults (no config file), those key-related env vars are still applied; full field defaults still follow the “load file + Viper” path when a file is present.
+
+Write an example file:
+
+```bash
+./websearch-mcp-cli init
+./websearch-mcp-cli -c ~/.config/websearch/config.yaml init
+```
 
 ## Full Configuration
 
 ```yaml
-port: 8338                  # MCP HTTP port
+port: 8338                  # MCP HTTP port (ignored by stdio CLI)
 log_level: info             # debug / info / warn / error
 mode: engine                # baidu / apipool / tavily / exa / hybrid / engine
 network: china              # china (skip overseas engines) / international

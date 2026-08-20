@@ -2,6 +2,14 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v3.0 — 2026-08-20
+
+### 新增
+- **stdio 纯 CLI**：独立入口 `cmd/cli`，默认在 stdin/stdout 上运行 MCP；无配置文件时使用 `mode: engine` 内存默认值
+- Release 额外发布 `websearch-mcp-cli-{linux,windows,darwin}-{amd64,arm64}` 及对应 `.sha256`
+- CLI 子命令：`init` 写出示例配置，`version` 显示版本；日志写 stderr，避免污染 JSON-RPC
+- 文档补充 HTTP / stdio 配置差异说明（`docs/config.md`）
+
 ## v2.15.0 — 2026-08-14
 
 ### 变更

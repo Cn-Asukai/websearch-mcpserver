@@ -2,6 +2,14 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v3.0 — 2026-08-20
+
+### Added
+- **stdio CLI**: standalone `cmd/cli` entry that speaks MCP over stdin/stdout by default; uses in-memory `mode: engine` defaults when no config file is found
+- Releases now also publish `websearch-mcp-cli-{linux,windows,darwin}-{amd64,arm64}` plus matching `.sha256` files
+- CLI commands: `init` writes an example config, `version` prints the version; logs go to stderr so they do not corrupt JSON-RPC
+- Docs: HTTP vs stdio config notes (`docs/config.en.md`)
+
 ## v2.15.0 — 2026-08-14
 
 ### Changed
