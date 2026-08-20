@@ -247,7 +247,7 @@
 
 ### 文档
 - 新增 [docs/api.md](docs/api.md)：Go Module API 和 HTTP API 完整文档
-- 新增 [docs/config.md](docs/config.md)：配置参考、默认值速查、环境变量覆盖
+- 新增 [docs/configuration.md](docs/configuration.md)：配置参考、默认值速查、环境变量覆盖
 - README 全面重写：精简结构化，补充特性亮点、运维参考、排障指南
 
 ## 2026-05-23

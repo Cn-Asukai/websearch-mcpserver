@@ -247,7 +247,7 @@
 
 ### Documentation
 - New [docs/api.md](docs/api.md): Go Module API and HTTP API complete documentation
-- New [docs/config.md](docs/config.md): config reference, defaults quick reference, environment variable overrides
+- New [docs/configuration.md](docs/configuration.md): config reference, defaults quick reference, environment variable overrides
 - README fully rewritten: simplified structure, feature highlights, operations reference, troubleshooting guide
 
 ## 2026-05-23

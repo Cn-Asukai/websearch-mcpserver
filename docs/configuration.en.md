@@ -1,6 +1,16 @@
 # Configuration Reference
 
-[English](config.en.md) | [中文](config.md)
+[English](configuration.en.md) | [中文](configuration.md)
+
+## Contents
+
+- [Config File Path](#config-file-path)
+- [stdio CLI Configuration Notes](#stdio-cli-configuration-notes)
+- [Full Configuration](#full-configuration)
+- [Environment Variable Overrides](#environment-variable-overrides)
+- [Default Values Quick Reference](#default-values-quick-reference)
+
+---
 
 ## Config File Path
 
@@ -9,10 +19,12 @@ Priority (high to low):
 2. CLI flag `-c / --config`
 3. Current directory `config.yaml`
 
-> HTTP daemon: with `-c`, the PID file and log file are written under the config file's directory.  
+> HTTP daemon: with `-c`, the PID file and log file are written under the config file's directory.
 > stdio CLI: no PID file; logs go to `websearch.log` in the config directory (console logs on **stderr** so they do not corrupt JSON-RPC on stdout).
 
 The HTTP daemon (`websearch-mcpserver start`) and the stdio CLI (`websearch-mcp-cli`) share the **same YAML schema**; search/tool fields mean the same thing. Differences are below.
+
+---
 
 ## stdio CLI Configuration Notes
 
@@ -34,7 +46,7 @@ mode: engine
 # port may be omitted; it has no effect for stdio
 ```
 
-Key env vars work the same as HTTP: `BAIDU_SK`, `TAVILY_SK`, `EXA_API_KEY`, `LLM_BASE_URL`, `LLM_API_KEY`, `MINERU_TOKEN`, etc. When running with in-memory defaults (no config file), those key-related env vars are still applied; full field defaults still follow the “load file + Viper” path when a file is present.
+Key env vars work the same as HTTP: `BAIDU_SK`, `TAVILY_SK`, `EXA_API_KEY`, `LLM_BASE_URL`, `LLM_API_KEY`, `MINERU_TOKEN`, etc. When running with in-memory defaults (no config file), those key-related env vars are still applied; full field defaults still follow the "load file + Viper" path when a file is present.
 
 Write an example file:
 
@@ -43,6 +55,8 @@ Write an example file:
 ./websearch-mcp-cli -c ~/.config/websearch/config.yaml init
 ```
 
+---
+
 ## Full Configuration
 
 ```yaml
@@ -50,6 +64,11 @@ port: 8338                  # MCP HTTP port (ignored by stdio CLI)
 log_level: info             # debug / info / warn / error
 mode: engine                # baidu / apipool / tavily / exa / hybrid / engine
 network: china              # china (skip overseas engines) / international
+
+# Global rate limit (applies to all search engines)
+rate_limit:
+  per_sec: 3                # Requests per second (default 3)
+  per_min: 60               # Requests per minute (default 60)
 
 # Blocked sites (applies to all search engines)
 black_list_host:
@@ -83,13 +102,23 @@ exa:
 bing:
   enabled: true             # Master switch
   blocked: []               # Bing-specific blocked domains (merged with black_list_host)
-  per_sec: 1                # Rate limit per second
-  per_min: 20               # Rate limit per minute
+
+# DuckDuckGo engine (needs proxy, no key needed)
+duckduckgo:
+  enabled: true             # Master switch (auto-joins search when proxy is available)
+  blocked: []               # DuckDuckGo-specific blocked domains (merged with black_list_host)
+
+# Google engine (disabled by default, anti-bot blocked)
+google:
+  enabled: false            # Explicit true may work but can return security challenge pages
+  blocked: []               # Google-specific blocked domains (merged with black_list_host)
 
 # Academic engines (no key needed)
 academic:
   enabled: true             # Master switch, registers academicsearch tool
   bing_fallback: true       # Use Bing as fallback for academic search
+  enhance: true             # Academic scoring enhancement (RRF fusion + citation/journal/PDF/recency), default true
+  threshold: 0.02           # Academic result threshold (more lenient than general search), default 0.02
   disable_arxiv: false
   disable_crossref: false
   disable_openalex: false
@@ -126,6 +155,8 @@ cleanfetch:
   file_ttl_hours: 24        # Temp file retention (hours)
   max_inline_lines: 100     # Lines above this threshold stored to file
   max_inline_chars: 0       # Chars above this threshold stored to file, 0=unlimited
+  timeout_sec: 30           # Per-request timeout (seconds), default 30
+  max_fetch_size_mb: 10     # HEAD pre-check max file size (MB), reject above (default 10)
   use_system_proxy: false   # Auto-use system proxy (env vars + Windows registry), default false
   max_retries: 3            # Max retries (429/502/503 only), default 3
 
@@ -136,7 +167,7 @@ pdf_parser:
   enabled: false            # Must be explicitly true to enable
   # mineru_token: ""        # JWT Token; enables Standard API when set
   # mineru_model: "pipeline" # pipeline (default) / vlm (recommended)
-  # mineru_ocr: false        # OCR recognition
+  # mineru_ocr: false        # OCR fallback for scanned PDFs (when local library finds no text)
   # mineru_formula: true     # Formula recognition (default true)
   # mineru_table: true       # Table recognition (default true)
   # mineru_lang: "ch"        # Document language (default ch)
@@ -145,28 +176,41 @@ pdf_parser:
 # smartsearch:
 #   max_size: 10          # Global max results (truncated by score), 0 = unlimited
 #   show_meta: true       # Show engine source and relevance score in output (default true)
+#   enhance: true         # Local scoring enhancement (RRF fusion + lexical alignment + domain quality + boosts + threshold), default true
+#   relevance_threshold: 0.05  # Relevance threshold after enhancement; below this is filtered (Top-1 protected), default 0.05
+#   mmr:                       # MMR diversity re-ranking (breaks up same-topic similar results)
+#     enabled: true            # Master switch (default true)
+#     lambda: 0.7              # Relevance-diversity tradeoff [0,1], higher = more relevance (default 0.7)
+#     target_count: 0          # Target count after MMR, 0 = no extra truncation
 #   engines:              # Per-engine config (names: tavily_api, exa, baidu_api, baidu, bing, google, duckduckgo)
 #     tavily_api:
 #       min_score: 0.5    # Tavily API minimum relevance score threshold (0 = no filter)
 #       max_size: 6       # Tavily API per-engine max results (default 4)
+#       weight: 1.0       # Engine weight, affects RRF fusion score (when enhance=true), 0 = default 1.0
 #     exa:
 #       min_score: 0      # Exa doesn't return score, this field is ignored
 #       max_size: 4       # Exa per-engine max results
+#       weight: 1.0
 #     baidu_api:
 #       min_score: 0      # Baidu Qianfan doesn't return score (enable_ai_search controls endpoint)
 #       max_size: 5       # Baidu Qianfan per-engine max results
+#       weight: 1.0
 #     baidu:
 #       min_score: 0      # Baidu web search doesn't return score
 #       max_size: 5       # Baidu web search per-engine max results
+#       weight: 1.0
 #     bing:
 #       min_score: 0      # Bing doesn't return score, this field is ignored
 #       max_size: 4       # Bing per-engine max results
+#       weight: 1.0
 #     google:
 #       min_score: 0      # Google doesn't return score, this field is ignored
 #       max_size: 4       # Google per-engine max results
+#       weight: 1.0
 #     duckduckgo:
 #       min_score: 0      # DuckDuckGo doesn't return score, this field is ignored
 #       max_size: 4       # DuckDuckGo per-engine max results
+#       weight: 1.0
 
 # Apipool mode config (optional, effective when mode=apipool)
 # apipool:
@@ -183,6 +227,8 @@ log:
   max_age: 1                # Retention (days)
 ```
 
+---
+
 ## Environment Variable Overrides
 
 | Env Var | Overrides | Notes |
@@ -197,26 +243,36 @@ log:
 
 > Viper's `AutomaticEnv()` also supports `APP_` prefix for overriding any config field.
 
+---
+
 ## Default Values Quick Reference
 
 | Field | Default | Notes |
 |-------|---------|-------|
 | `port` | 8338 | stop/kill/status also use this port when no config |
-| `mode` | baidu | Auto-degrades to engine when no keys; `apipool` = API Key pool rotation, supports round-robin / priority strategies |
+| `mode` | engine | Auto-degrades to engine when no keys; `apipool` = API Key pool rotation, supports round-robin / priority strategies |
+| `network` | china | |
+| `rate_limit.per_sec` | 3 | Global rate limit |
+| `rate_limit.per_min` | 60 | Global rate limit |
 | `apipool.strategy` | round-robin | `round-robin` rotates provider across requests / `priority` fixed order |
 | `apipool.engines` | [baidu, tavily, exa] | Provider priority order, Baidu web search fallback always last |
 | `baidu.enable_ai_search` | true | true=AI search chat/completions, false=web search web_search; no LLM cost when model is empty |
-| `network` | china | |
 | `bing.enabled` | true | |
-| `bing.per_sec` | 1 | |
-| `bing.per_min` | 20 | |
+| `duckduckgo.enabled` | true | Needs proxy; auto-joins when proxy is available |
+| `google.enabled` | false | Anti-bot blocked, must be explicitly enabled |
 | `academic.enabled` | true | |
 | `academic.bing_fallback` | true | |
-| `proxy.enabled` | false | Auto-detects system proxy when not set; explicit false disables |
+| `academic.enhance` | true | Academic scoring enhancement |
+| `academic.threshold` | 0.02 | Academic result threshold |
+| `academic.disable_semantic_scholar` | true | Disabled by default, auto-proxied when enabled |
+| `academic.disable_google_scholar` | true | Disabled by default, auto-proxied when enabled |
+| `proxy.enabled` | unset | Auto-detects system proxy when not set; explicit false disables; explicit true uses endpoint |
 | `proxy.endpoint` | `http://127.0.0.1:7897` | Only effective when `enabled: true` |
 | `cleanfetch.enabled` | false | Old configs don't enable; must be explicit |
 | `cleanfetch.file_ttl_hours` | 24 | |
 | `cleanfetch.max_inline_lines` | 100 | |
+| `cleanfetch.timeout_sec` | 30 | |
+| `cleanfetch.max_fetch_size_mb` | 10 | HEAD pre-check threshold |
 | `cleanfetch.use_system_proxy` | false | Auto-use system proxy (env vars + Windows registry) |
 | `cleanfetch.max_retries` | 3 | Only retries on 429/502/503 |
 | `pdf_parser.enabled` | false | Independent of cleanfetch |
@@ -224,11 +280,18 @@ log:
 | `pdf_parser.mineru_formula` | true | Formula recognition |
 | `pdf_parser.mineru_table` | true | Table recognition |
 | `pdf_parser.mineru_lang` | ch | Document language |
+| `smartsearch.show_meta` | true | Show engine source and relevance score in output |
+| `smartsearch.enhance` | true | Local scoring enhancement |
+| `smartsearch.relevance_threshold` | 0.05 | Relevance threshold after enhancement |
+| `smartsearch.mmr.enabled` | true | MMR diversity re-ranking |
+| `smartsearch.mmr.lambda` | 0.7 | Relevance-diversity tradeoff |
 | `cache.enabled` | nil | Not set → judge by storage_path; explicit false → force disable; explicit true → force enable |
 | `cache.cleanup_interval` | 30 (min) | Max 360 |
 | Cache expiry | 6 hours | Based on last hit time, hardcoded |
 | `log.max_size` | 1 (MB) | |
 | `log.max_age` | 1 (day) | |
+
+---
 
 ## Minimal Config
 
@@ -237,4 +300,4 @@ port: 8338
 mode: engine
 ```
 
-Runs with zero API keys using Bing + academic search engines.
+Runs with zero API keys using Baidu web search + Bing + academic search engines.
