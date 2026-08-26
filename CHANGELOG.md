@@ -2,6 +2,35 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v3.1.0 — 2026-08-26
+
+### 安全
+- **默认只监听本机**：新增 `host` 配置（默认 `127.0.0.1`），服务不再默认绑所有网卡；`0.0.0.0`/`::` 且未配置 token 时启动打 Error 警告
+- **业务端点可选 Bearer 鉴权**：新增 `auth_token`（环境变量 `WEBSEARCH_TOKEN`），`/mcp` 与 `/searxng/search` 支持 `Authorization: Bearer` / `X-API-Key` 任一通过；未配置时不鉴权（向后兼容），`__admin/*` 保持本机协议不变
+
+### 修复
+- **API 上游默认 30s 超时**：`pkg/client` DefaultClient 设置超时（`upstream_timeout_sec` 可配置，0 = 不设超时），黑洞上游不再永久挂起 MCP 工具
+- **KeyPool 并发标错 key**：搜索适配器失败时返回携带实际 key 的错误，apipool 按 key 精确冷却；`MarkLastInvalid` 标注非并发安全，新代码禁用
+- **双 SearchGroup 合并**：MCP 与 SearXNG 共用同一套引擎（`GetSearchGroup`），限流与 Key 状态不再分裂；SearXNG 空 query 返回 400、无引擎返回 503，不再 panic
+- **单引擎结果不再被默默截成 4 条**：per-engine `max_size` 未配置时只应用全局 `max_size`，apipool/baidu_ai 等模式结果数恢复可配置
+- **hybrid 记录单引擎失败**：Warn 日志 + 全失败时错误摘要（不泄露 API Key）
+- **代理 transport 按端点缓存**：不再每请求 Clone，连接池生效；系统代理检测加 10s TTL 缓存
+- **WinHTTP 代理字符串越界**：按缓冲区边界读 UTF-16 至 NUL，删除定长 512 强转
+- **MinerU 仅处理 PDF URL**：远程 URL 只有 `.pdf` 结尾才走精准 API（`mineru_remote_pdf` 可关闭，默认 true），普通网页不再消耗 MinerU 额度
+- **viper env 回填**：`Load()` 后显式 `applyKnownEnv`，精简 yaml 缺字段时 `TAVILY_SK` 等环境变量仍生效
+- **关机顺序**：先 HTTP Shutdown 再关 WebFetch/SQLite，进行中请求不再撞 `sql: database is closed`
+- **start TOCTOU / 脏 PID**：监听成功后才写 PID；端口占用返回错误不 panic
+- **Jina 内网判断**：`net.ParseIP` + `IsPrivate()`，`172.32.0.0/11` 等公网段不再被误判为内网
+- **缓存 upsert**：`(query, intent, academic)` 唯一索引 + `ON CONFLICT DO UPDATE`，旧库先清理重复行，同 query 不再堆行
+- **daemon PostShutdown 泄漏**：响应 body 正确 Close；**CleanupScheduler.Stop** 真正阻塞等待协程退出（可取消）
+
+### 变更
+- **「零配置」= 生成可编辑预设 yaml**：首次 `start`（未指定 `-c`）在可执行文件目录写出与 `config.example.yaml` 相同的 `config.yaml`；`install` / `cli init` 统一走 `EnsureExampleFile`（幂等，不覆盖用户改动）
+- 外网集成测试统一 `testing.Short()` 跳过（Bing / Crossref / arXiv / OpenAlex / Semantic Scholar / Google Scholar），`go test -short ./...` 不再发起外网请求
+
+### 文档
+- 配置 / 安装 / API 文档（中英）同步 `host`、`auth_token`、`upstream_timeout_sec`、`mineru_remote_pdf`；MCP 客户端注册补 headers 示例；README 注明 Google / DDG / Crossref / Google Scholar 国内直连不稳定
+
 ## v3.0 — 2026-08-20
 
 ### 新增

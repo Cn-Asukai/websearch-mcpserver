@@ -58,10 +58,10 @@ func (s *Server) RefCount() int32
 #### `(*Server) Run`
 
 ```go
-func (s *Server) Run(conf config.Config)
+func (s *Server) Run(conf config.Config, onListening ...func()) error
 ```
 
-完整启动流程：初始化搜索引擎、MCP 路由、SearXNG 路由、Admin 路由、缓存清理协程，然后启动 HTTP Server 并阻塞直到收到 `SIGINT`/`SIGTERM` 信号或引用计数归零。退出时自动执行优雅关闭（停止缓存清理 → 关闭 SQLite → HTTP Shutdown → 清理 PID 文件）。
+完整启动流程：初始化搜索引擎、MCP 路由、SearXNG 路由、Admin 路由、缓存清理协程，然后监听端口（默认 `127.0.0.1:8338`）并阻塞直到收到 `SIGINT`/`SIGTERM` 信号或引用计数归零。监听成功后才调用 `onListening` 回调（可用于写 PID 文件）；监听失败（如端口占用）返回错误，不 panic。退出时自动执行优雅关闭（停止缓存清理 → HTTP Shutdown → 关闭 WebFetch → 关闭 SQLite → 清理 PID 文件）。
 
 适合 CLI 或独立部署场景。
 
@@ -194,6 +194,8 @@ claude mcp add --transport http websearch-mcp http://localhost:8338/mcp
 | Content-Type | `application/json` |
 
 提供与 SearXNG 兼容的搜索接口，可对接 LiteLLM 等框架。
+
+> **鉴权**：配置了 `auth_token` 时需携带 `Authorization: Bearer <token>` 或 `X-API-Key: <token>` 头，否则返回 401；`q` 为空返回 400；无可用引擎返回 503。
 
 #### 请求示例
 

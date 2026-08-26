@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	mcpserver "websearch/mcp"
+	"websearch/pkg/config"
 	"websearch/pkg/log"
 	"websearch/pkg/search"
 )
@@ -20,6 +23,14 @@ func slice2Any[T any](s []T) []any {
 
 func handlerSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "missing query parameter q", http.StatusBadRequest)
+		return
+	}
+	if defaultInf == nil {
+		http.Error(w, "no search engine available", http.StatusServiceUnavailable)
+		return
+	}
 	ret, err := defaultInf.SearchRaw(query)
 	if err != nil {
 		responseError(w, 5001, fmt.Sprintf("%s", err.Error()))
@@ -38,8 +49,8 @@ func Init(group *search.SearchGroup) {
 	}
 }
 
-func RegisterRouter(mux *http.ServeMux) {
-	mux.HandleFunc("GET /searxng/search", handlerSearch)
+func RegisterRouter(mux *http.ServeMux, conf config.Config) {
+	mux.Handle("GET /searxng/search", mcpserver.AuthMiddleware(conf, http.HandlerFunc(handlerSearch)))
 }
 
 // responseJSON 输出 JSON 响应。

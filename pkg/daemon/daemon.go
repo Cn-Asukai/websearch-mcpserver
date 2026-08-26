@@ -137,8 +137,12 @@ func GetHealth(port int) (*RefCountResponse, error) {
 // PostShutdown 请求服务端强制关闭
 func PostShutdown(port int) error {
 	url := AdminURL(port, "/shutdown")
-	_, err := http.Post(url, "application/json", nil)
-	return err
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
 }
 
 // WaitForExit 等待进程退出（轮询）

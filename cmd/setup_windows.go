@@ -21,9 +21,9 @@ WshShell.Run """%s"" start", 0, False
 var (
 	ole32 = syscall.MustLoadDLL("ole32.dll")
 
-	procCoInitializeEx  = ole32.MustFindProc("CoInitializeEx")
+	procCoInitializeEx   = ole32.MustFindProc("CoInitializeEx")
 	procCoCreateInstance = ole32.MustFindProc("CoCreateInstance")
-	procCoUninitialize  = ole32.MustFindProc("CoUninitialize")
+	procCoUninitialize   = ole32.MustFindProc("CoUninitialize")
 )
 
 // parseGUID 手动解析 GUID 字符串到 syscall.GUID，避免依赖 oleaut32.dll
@@ -68,27 +68,27 @@ func parseGUID(s string) (syscall.GUID, error) {
 }
 
 type IShellLinkWVtbl struct {
-	QueryInterface        uintptr
-	AddRef                uintptr
-	Release               uintptr
-	GetPath               uintptr
-	GetIDList             uintptr
-	SetIDList             uintptr
-	GetDescription        uintptr
-	SetDescription        uintptr
-	GetWorkingDirectory   uintptr
-	SetWorkingDirectory   uintptr
-	GetArguments          uintptr
-	SetArguments          uintptr
-	GetHotkey             uintptr
-	SetHotkey             uintptr
-	GetShowCmd            uintptr
-	SetShowCmd            uintptr
-	GetIconLocation       uintptr
-	SetIconLocation       uintptr
-	SetRelativePath       uintptr
-	Resolve               uintptr
-	SetPath               uintptr
+	QueryInterface      uintptr
+	AddRef              uintptr
+	Release             uintptr
+	GetPath             uintptr
+	GetIDList           uintptr
+	SetIDList           uintptr
+	GetDescription      uintptr
+	SetDescription      uintptr
+	GetWorkingDirectory uintptr
+	SetWorkingDirectory uintptr
+	GetArguments        uintptr
+	SetArguments        uintptr
+	GetHotkey           uintptr
+	SetHotkey           uintptr
+	GetShowCmd          uintptr
+	SetShowCmd          uintptr
+	GetIconLocation     uintptr
+	SetIconLocation     uintptr
+	SetRelativePath     uintptr
+	Resolve             uintptr
+	SetPath             uintptr
 }
 
 type IShellLinkW struct {
@@ -199,11 +199,12 @@ func runInstall() {
 
 	// 1. 检查并生成 config.yaml
 	configPath := filepath.Join(exeDir, "config.yaml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		if err := os.WriteFile(configPath, config.ExampleConfig, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to write config.yaml: %v\n", err)
-			os.Exit(1)
-		}
+	created, err := config.EnsureExampleFile(configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write config.yaml: %v\n", err)
+		os.Exit(1)
+	}
+	if created {
 		fmt.Println("created config.yaml")
 	} else {
 		fmt.Println("config.yaml already exists")

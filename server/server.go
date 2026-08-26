@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"websearch/pkg/config"
 	"websearch/pkg/daemon"
 	"websearch/pkg/log"
-	"websearch/pkg/search"
 	"websearch/searxng"
 )
 
@@ -126,8 +126,10 @@ func (s *Server) registerAdminHandlers(mux *http.ServeMux) {
 }
 
 // Run 启动 HTTP 服务并阻塞直到收到关闭信号或引用计数归零。
+// 监听成功（端口可用）后调用 onListening 回调（可用于写 PID 文件）；
+// 监听失败（如端口占用）返回错误，不 panic。
 // 外部项目可直接调用此方法将 MCP 服务嵌入到自己的 HTTP Server 中。
-func (s *Server) Run(conf config.Config) {
+func (s *Server) Run(conf config.Config, onListening ...func()) error {
 	if err := mcpserver.Init(conf,
 		mcpserver.WithSearchEngine(conf),
 		mcpserver.WithSummarizer(conf),
@@ -135,13 +137,12 @@ func (s *Server) Run(conf config.Config) {
 		mcpserver.WithWebFetch(conf),
 		mcpserver.WithJinaReader(conf),
 	); err != nil {
-		panic(err)
+		return err
 	}
-	searchGroup, _ := search.NewFromConfig(conf)
-	searxng.Init(searchGroup)
+	searxng.Init(mcpserver.GetSearchGroup())
 	mux := http.NewServeMux()
 	mcpserver.RegisterRouter(mux, conf)
-	searxng.RegisterRouter(mux)
+	searxng.RegisterRouter(mux, conf)
 	s.registerAdminHandlers(mux)
 
 	// 启动缓存清理协程
@@ -151,8 +152,26 @@ func (s *Server) Run(conf config.Config) {
 		cleanup.Start()
 	}
 
+	host := conf.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(conf.Port))
+	if (host == "0.0.0.0" || host == "::") && conf.AuthToken == "" {
+		log.Errf("监听地址 %s 对所有网卡开放且未配置 auth_token，局域网内任意主机可访问业务端点，强烈建议配置 token", addr)
+	}
+
+	// 先监听成功再写 PID / Serve，避免端口占用时留下脏 PID 文件
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s failed: %w", addr, err)
+	}
+	for _, cb := range onListening {
+		cb()
+	}
+
 	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", conf.Port),
+		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
@@ -163,8 +182,8 @@ func (s *Server) Run(conf config.Config) {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Infof("server start on :%d", conf.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Infof("server start on %s", addr)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Errf("server start failed: %v", err)
 			panic(err)
 		}
@@ -185,9 +204,12 @@ func (s *Server) Run(conf config.Config) {
 		cleanup.Stop(context.Background())
 	}
 
-	// 关闭缓存数据库
-	if c := mcpserver.GetCache(); c != nil {
-		c.Close()
+	// 优雅关闭（5秒超时）：先停 HTTP，再进行中请求结束后再关依赖
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Errf("server shutdown failed: %v", err)
+		return err
 	}
 
 	// 关闭 WebFetch 引擎
@@ -195,18 +217,16 @@ func (s *Server) Run(conf config.Config) {
 		wf.Close()
 	}
 
-	// 优雅关闭（5秒超时）
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Errf("server shutdown failed: %v", err)
-		panic(err)
+	// 关闭缓存数据库
+	if c := mcpserver.GetCache(); c != nil {
+		c.Close()
 	}
 
 	// 清理 PID 文件
 	_ = daemon.RemovePID()
 
 	log.Info("server exited gracefully")
+	return nil
 }
 
 // Handler 返回注册了 MCP、SearXNG 和 admin 路由的 http.Handler。
@@ -221,11 +241,10 @@ func (s *Server) Handler(conf config.Config) http.Handler {
 	); err != nil {
 		panic(err)
 	}
-	searchGroup, _ := search.NewFromConfig(conf)
-	searxng.Init(searchGroup)
+	searxng.Init(mcpserver.GetSearchGroup())
 	mux := http.NewServeMux()
 	mcpserver.RegisterRouter(mux, conf)
-	searxng.RegisterRouter(mux)
+	searxng.RegisterRouter(mux, conf)
 	s.registerAdminHandlers(mux)
 	return mux
 }

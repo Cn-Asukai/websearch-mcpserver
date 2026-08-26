@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"websearch/pkg/config"
+	"websearch/pkg/log"
 	md "websearch/pkg/xml"
 )
 
@@ -20,13 +21,13 @@ type engineFilter struct {
 
 // HybridSearchImpl 多引擎并发搜索，支持按 score 过滤和 per-engine maxsize 截断。
 type HybridSearchImpl struct {
-	engines     []SearchInf
-	engineMap   map[string]engineFilter // 按引擎名配置的过滤规则
-	maxSize     int                     // 全局最大结果数（按 score 排序后截断），0 = 不限
-	engineNames []string                // 与 engines 一一对应的引擎名
-	enhance          bool               // 是否启用 Wigolo 本地评分增强
-	relevanceThreshold float64          // 增强后的相关性阀值
-	mmr              config.MMRConfig   // MMR 多样性重排配置（Enabled=false 时不重排）
+	engines            []SearchInf
+	engineMap          map[string]engineFilter // 按引擎名配置的过滤规则
+	maxSize            int                     // 全局最大结果数（按 score 排序后截断），0 = 不限
+	engineNames        []string                // 与 engines 一一对应的引擎名
+	enhance            bool                    // 是否启用 Wigolo 本地评分增强
+	relevanceThreshold float64                 // 增强后的相关性阀值
+	mmr                config.MMRConfig        // MMR 多样性重排配置（Enabled=false 时不重排）
 }
 
 // indexedResult 并发搜索时单个引擎的结果。
@@ -126,13 +127,24 @@ func (h *HybridSearchImpl) mergeResults(query string, ch <-chan indexedResult) (
 
 	// 收集所有成功的结果，按引擎顺序合并
 	var allResults []indexedResult
+	var errSummaries []string
 	for r := range ch {
 		if r.err != nil {
+			name := "unknown"
+			if r.index >= 0 && r.index < len(h.engineNames) {
+				name = h.engineNames[r.index]
+			}
+			// 只打引擎名与错误摘要，不输出请求细节（API Key 等）
+			log.Warnf("hybrid: engine %s failed: %v", name, r.err)
+			errSummaries = append(errSummaries, fmt.Sprintf("%s: %v", name, r.err))
 			continue // 忽略单个引擎失败，只要有一个成功就行
 		}
 		allResults = append(allResults, r)
 	}
 	if len(allResults) == 0 {
+		if len(errSummaries) > 0 {
+			return nil, fmt.Errorf("所有搜索引擎均失败: %s", strings.Join(errSummaries, "; "))
+		}
 		return nil, fmt.Errorf("所有搜索引擎均失败")
 	}
 

@@ -16,14 +16,14 @@ import (
 
 // CacheRecord 缓存记录
 type CacheRecord struct {
-	ID          int64     `json:"id"`
-	Query       string    `json:"query"`
-	Intent      string    `json:"intent"`
-	Academic    bool      `json:"academic"`      // 是否为学术搜索
-	RawResults  string    `json:"raw_results"`  // []SearchResult JSON
-	Summary     string    `json:"summary"`       // LLM 摘要文本，可能为空
-	CreatedAt   time.Time `json:"created_at"`    // 存储时间
-	LastHitAt   time.Time `json:"last_hit_at"`   // 最近一次命中时间
+	ID         int64     `json:"id"`
+	Query      string    `json:"query"`
+	Intent     string    `json:"intent"`
+	Academic   bool      `json:"academic"`    // 是否为学术搜索
+	RawResults string    `json:"raw_results"` // []SearchResult JSON
+	Summary    string    `json:"summary"`     // LLM 摘要文本，可能为空
+	CreatedAt  time.Time `json:"created_at"`  // 存储时间
+	LastHitAt  time.Time `json:"last_hit_at"` // 最近一次命中时间
 }
 
 // Cache SQLite 缓存层，并发安全
@@ -70,8 +70,29 @@ func New(storagePath string) (*Cache, error) {
 		return nil, fmt.Errorf("迁移 academic 列失败: %w", err)
 	}
 
+	// 迁移：删除 (query, intent, academic) 重复行，每组保留 last_hit_at 最新的一条。
+	// 旧库可能因历史重复行导致唯一索引创建失败；本语句幂等，重复执行无副作用。
+	_, err = db.Exec(`
+		DELETE FROM search_cache
+		 WHERE id IN (
+			SELECT id FROM (
+				SELECT id, ROW_NUMBER() OVER (
+					PARTITION BY query, intent, academic
+					ORDER BY last_hit_at DESC, id DESC
+				) AS rn
+				FROM search_cache
+			)
+			WHERE rn > 1
+		)
+	`)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("迁移去重失败: %w", err)
+	}
+
 	// 创建索引
 	_, err = db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_query_intent_academic_uniq ON search_cache(query, intent, academic);
 		CREATE INDEX IF NOT EXISTS idx_query ON search_cache(query);
 		CREATE INDEX IF NOT EXISTS idx_query_intent_academic ON search_cache(query, intent, academic);
 		CREATE INDEX IF NOT EXISTS idx_last_hit ON search_cache(last_hit_at);
@@ -170,7 +191,11 @@ func (c *Cache) Store(query, intent string, academic bool, results []search.Sear
 
 	_, err = c.db.Exec(
 		`INSERT INTO search_cache (query, intent, academic, raw_results, summary, created_at, last_hit_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(query, intent, academic) DO UPDATE SET
+			raw_results = excluded.raw_results,
+			summary     = excluded.summary,
+			last_hit_at = excluded.last_hit_at`,
 		query, intent, academicInt, string(rawJSON), summary, now, now,
 	)
 	if err != nil {

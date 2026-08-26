@@ -55,10 +55,13 @@ LLM 需要联网搜索，但现成的 MCP 搜索方案不能满足我的偏好�
 
 ```bash
 # 1. 下载二进制: https://github.com/daidaiJ/websearch-mcpserver/releases
-# 2. 启动（零配置，无需 API Key）
+# 2. 启动（无需手写配置，无需 API Key）
+#    首次 start 会在可执行文件目录自动生成一份可编辑的预设 config.yaml
 ./websearch-mcpserver start
 # 3. 注册到 MCP 客户端（见 docs/installation.md）
 ```
+
+> 「零配置」= 首次启动自动生成与 `config.example.yaml` 相同的预设 `config.yaml`，改端口 / Key / 模式都改这一份文件。默认只监听 `127.0.0.1`；开放网卡（`host: 0.0.0.0`）时建议配置 `auth_token` 保护业务端点。
 
 **自启动（可选）**：
 

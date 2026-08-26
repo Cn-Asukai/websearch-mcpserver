@@ -145,7 +145,7 @@ func isPrivateHost(host string) bool {
 		"127.0.0.1",
 		"::1",
 		"0.0.0.0",
-		"169.254.169.254",         // AWS 元数据
+		"169.254.169.254",          // AWS 元数据
 		"metadata.google.internal", // GCP 元数据
 	}
 	for _, ph := range privateHosts {
@@ -172,17 +172,14 @@ func isPrivateHost(host string) bool {
 	return false
 }
 
-// isPrivateIPString 检查字符串是否为私有 IP 地址。
+// isPrivateIPString 检查字符串是否为私有/回环/链路本地 IP 地址。
+// 使用 net.ParseIP + 标准库谓词，避免字符串前缀误伤公网段（如 172.32.0.0/11）。
+// 与 isPrivateHost 中 DNS 分支的判定保持一致（fail-closed）。
 func isPrivateIPString(host string) bool {
-	if strings.HasPrefix(host, "10.") ||
-		strings.HasPrefix(host, "172.16.") ||
-		strings.HasPrefix(host, "172.17.") ||
-		strings.HasPrefix(host, "172.18.") ||
-		strings.HasPrefix(host, "172.19.") ||
-		strings.HasPrefix(host, "172.2") ||
-		strings.HasPrefix(host, "172.3") ||
-		strings.HasPrefix(host, "192.168.") {
-		return true
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
 	}
-	return false
+	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }

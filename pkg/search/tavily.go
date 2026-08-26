@@ -11,7 +11,7 @@ import (
 type TavilySearchImpl struct {
 	name           string
 	keys           *KeyPool
-	timeRange      string   // "day", "week", "month", "year"，空表示不限
+	timeRange      string // "day", "week", "month", "year"，空表示不限
 	includeDomains []string
 	excludeDomains []string
 }
@@ -100,17 +100,18 @@ func (t *TavilySearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 		ExcludeDomains: t.excludeDomains,
 	}
 	var resp tavilySearchResp
+	key := t.keys.Next()
 	res, err := client.DefaultClient.R().
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", t.keys.Next())).
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", key)).
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&resp).
 		Post("https://api.tavily.com/search")
 	if err != nil {
-		return nil, fmt.Errorf("tavily 搜索api 调用失败，%w", err)
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("tavily 搜索api 调用失败，%w", err)}
 	}
 	if res.StatusCode() != 200 {
-		return nil, fmt.Errorf("tavily 搜索api 返回错误状态码: %d", res.StatusCode())
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("tavily 搜索api 返回错误状态码: %d", res.StatusCode())}
 	}
 	if len(resp.Results) == 0 {
 		return nil, fmt.Errorf("tavily 搜索api 内容为空")

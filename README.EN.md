@@ -55,10 +55,13 @@ So I started in 2026-04 with a single Baidu Qianfan engine and evolved it into a
 
 ```bash
 # 1. Download a binary: https://github.com/daidaiJ/websearch-mcpserver/releases
-# 2. Start (zero config, no API keys)
+# 2. Start (no hand-written config, no API keys)
+#    The first `start` auto-generates an editable preset config.yaml next to the executable
 ./websearch-mcpserver start
 # 3. Register with your MCP client (see docs/installation.md)
 ```
+
+> "Zero config" = the first start writes a preset `config.yaml` identical to `config.example.yaml`; edit that file for port/keys/mode. The daemon listens on `127.0.0.1` by default; when opening the network (`host: 0.0.0.0`), configure `auth_token` to protect business endpoints.
 
 **Auto-start (optional)**:
 

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,46 @@ import (
 // sseChunk 构造一个 OpenAI-compatible SSE data 行。
 func sseChunk(content string) string {
 	return fmt.Sprintf(`data: {"id":"x","object":"chat.completion.chunk","choices":[{"delta":{"content":%q},"index":0}]}`, content)
+}
+
+func TestChat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"choices":[{"message":{"role":"assistant","content":"hello"}}]}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "test-key", "test-model")
+	got, err := c.Chat("sys", "user")
+	if err != nil {
+		t.Fatalf("Chat 应成功, got err=%v", err)
+	}
+	if got != "hello" {
+		t.Errorf("expected hello, got %q", got)
+	}
+}
+
+func TestChatContextTimeout(t *testing.T) {
+	// 用不 Accept 的原始 listener 模拟黑洞上游：连接进入 backlog 后永不响应，
+	// 避免 httptest 的 Close 等待挂起的 handler（POST+body 超时后连接不会关闭）。
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	c := NewClient("http://"+ln.Addr().String(), "test-key", "test-model")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err = c.ChatWithContext(ctx, "sys", "user")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("ctx 超时后应返回错误")
+	}
+	if elapsed >= time.Second {
+		t.Errorf("ctx 取消应 < 1s, got %v", elapsed)
+	}
 }
 
 func TestChatStream(t *testing.T) {

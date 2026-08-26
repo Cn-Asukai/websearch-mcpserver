@@ -52,7 +52,13 @@ func NewClient(baseURL, apiKey, model_id string) *Client {
 	}
 }
 
+// Chat 以非流式方式调用 LLM，返回完整回答。
 func (c *Client) Chat(systemPrompt, userPrompt string) (string, error) {
+	return c.ChatWithContext(context.Background(), systemPrompt, userPrompt)
+}
+
+// ChatWithContext 同 Chat，但支持 ctx 取消（如客户端断开时中止请求）。
+func (c *Client) ChatWithContext(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	reqBody := ChatRequest{
 		Model: c.model,
 		Messages: []ChatMessage{
@@ -68,6 +74,7 @@ func (c *Client) Chat(systemPrompt, userPrompt string) (string, error) {
 	var resp ChatResponse
 	url := fmt.Sprintf("%s/v1/chat/completions", c.baseURL)
 	res, err := client.DefaultClient.R().
+		SetContext(ctx).
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", c.apiKey)).
 		SetHeader("Content-Type", "application/json").
 		SetBody(bytes.NewReader(body)).

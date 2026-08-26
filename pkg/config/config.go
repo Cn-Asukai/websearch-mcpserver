@@ -27,28 +27,31 @@ const (
 // ── 顶层配置 ──
 
 type Config struct {
-	Port          int              `mapstructure:"port"`
-	LogLevel      string           `mapstructure:"log_level"`
-	Mode          string           `mapstructure:"mode"`
-	Network       string           `mapstructure:"network"`        // 全局网络区域: china / international
-	BlackListHost []string         `mapstructure:"black_list_host"` // 全局屏蔽站点
-	RateLimit     RateLimitConfig  `mapstructure:"rate_limit"`      // 全局限流配置
-	Baidu         BaiduConfig      `mapstructure:"baidu"`
-	Tavily        TavilyConfig     `mapstructure:"tavily"`
-	Exa           ExaConfig        `mapstructure:"exa"`
-	LLM           LLMConfig        `mapstructure:"llm"`
-	Jina          JinaConfig       `mapstructure:"jina"`
-	Cache         CacheConfig      `mapstructure:"cache"`
-	Log           LogConfig        `mapstructure:"log"`
-	Bing          BingConfig        `mapstructure:"bing"`
-	DuckDuckGo    DuckDuckGoConfig `mapstructure:"duckduckgo"`
-	Google        GoogleConfig      `mapstructure:"google"`
-	Academic      AcademicConfig    `mapstructure:"academic"`
-	CleanFetch    CleanFetchConfig   `mapstructure:"cleanfetch"`
-	PDFParser     PDFParserConfig    `mapstructure:"pdf_parser"`
-	Proxy         ProxyConfig        `mapstructure:"proxy"`
-	SmartSearch   SmartSearchConfig  `mapstructure:"smartsearch"`
-	Apipool       ApipoolConfig      `mapstructure:"apipool"`
+	Port               int               `mapstructure:"port"`
+	Host               string            `mapstructure:"host"`                 // 监听地址，默认 127.0.0.1；"0.0.0.0" 才对所有网卡开放
+	AuthToken          string            `mapstructure:"auth_token"`           // 业务端点 Bearer token，空 = 不鉴权；环境变量 WEBSEARCH_TOKEN
+	UpstreamTimeoutSec int               `mapstructure:"upstream_timeout_sec"` // API 上游超时（秒），默认 30；显式 0 = 不设超时（有挂起风险）
+	LogLevel           string            `mapstructure:"log_level"`
+	Mode               string            `mapstructure:"mode"`
+	Network            string            `mapstructure:"network"`         // 全局网络区域: china / international
+	BlackListHost      []string          `mapstructure:"black_list_host"` // 全局屏蔽站点
+	RateLimit          RateLimitConfig   `mapstructure:"rate_limit"`      // 全局限流配置
+	Baidu              BaiduConfig       `mapstructure:"baidu"`
+	Tavily             TavilyConfig      `mapstructure:"tavily"`
+	Exa                ExaConfig         `mapstructure:"exa"`
+	LLM                LLMConfig         `mapstructure:"llm"`
+	Jina               JinaConfig        `mapstructure:"jina"`
+	Cache              CacheConfig       `mapstructure:"cache"`
+	Log                LogConfig         `mapstructure:"log"`
+	Bing               BingConfig        `mapstructure:"bing"`
+	DuckDuckGo         DuckDuckGoConfig  `mapstructure:"duckduckgo"`
+	Google             GoogleConfig      `mapstructure:"google"`
+	Academic           AcademicConfig    `mapstructure:"academic"`
+	CleanFetch         CleanFetchConfig  `mapstructure:"cleanfetch"`
+	PDFParser          PDFParserConfig   `mapstructure:"pdf_parser"`
+	Proxy              ProxyConfig       `mapstructure:"proxy"`
+	SmartSearch        SmartSearchConfig `mapstructure:"smartsearch"`
+	Apipool            ApipoolConfig     `mapstructure:"apipool"`
 }
 
 // ── 各搜索引擎配置 ──
@@ -58,11 +61,11 @@ type BaiduConfig struct {
 	SKList []string `mapstructure:"sk_list"` // 多 Key 轮询列表（优先级高于 api_key）
 	// 搜索模式配置
 	EnableAISearch   bool   `mapstructure:"enable_ai_search"`   // true=智能搜索 chat/completions（默认），false=网页搜索 web_search；不传 model 不产生 LLM 费用
-	Model            string `mapstructure:"model"`               // 智能搜索模型名，不传时走免费百度搜索（不产生 LLM 费用），传入模型名启用 LLM 智能搜索
-	SearchSource     string `mapstructure:"search_source"`       // 搜索引擎版本，默认 baidu_search_v2
-	EnableReasoning  bool   `mapstructure:"enable_reasoning"`    // 深度思考（默认 false）
-	EnableDeepSearch bool   `mapstructure:"enable_deep_search"`  // 深搜索（默认 false）
-	SearchMode       string `mapstructure:"search_mode"`         // 搜索模式: auto/required/disabled（默认 auto）
+	Model            string `mapstructure:"model"`              // 智能搜索模型名，不传时走免费百度搜索（不产生 LLM 费用），传入模型名启用 LLM 智能搜索
+	SearchSource     string `mapstructure:"search_source"`      // 搜索引擎版本，默认 baidu_search_v2
+	EnableReasoning  bool   `mapstructure:"enable_reasoning"`   // 深度思考（默认 false）
+	EnableDeepSearch bool   `mapstructure:"enable_deep_search"` // 深搜索（默认 false）
+	SearchMode       string `mapstructure:"search_mode"`        // 搜索模式: auto/required/disabled（默认 auto）
 }
 
 // EffectiveSKList 返回合并后的 Key 列表：sk_list 非空时直接返回，否则用 api_key 构造单元素列表。
@@ -134,10 +137,10 @@ type RateLimitConfig struct {
 // ── 学术引擎配置 ──
 
 type AcademicConfig struct {
-	Enabled      bool `mapstructure:"enabled"`       // 学术引擎总开关（默认 true）
-	BingFallback bool `mapstructure:"bing_fallback"` // 学术搜索时用 Bing 兜底（默认 true）
-	Enhance      bool `mapstructure:"enhance"`       // 学术搜索评分增强（RRF 融合 + 引用数/期刊权威/PDF/新鲜度信号），默认 true
-	Threshold    float64 `mapstructure:"threshold"`  // 学术结果阀值（比通用搜索更宽松），默认 0.02
+	Enabled      bool    `mapstructure:"enabled"`       // 学术引擎总开关（默认 true）
+	BingFallback bool    `mapstructure:"bing_fallback"` // 学术搜索时用 Bing 兜底（默认 true）
+	Enhance      bool    `mapstructure:"enhance"`       // 学术搜索评分增强（RRF 融合 + 引用数/期刊权威/PDF/新鲜度信号），默认 true
+	Threshold    float64 `mapstructure:"threshold"`     // 学术结果阀值（比通用搜索更宽松），默认 0.02
 
 	// 各引擎独立禁用（默认 false = 启用）
 	DisableArxiv           bool `mapstructure:"disable_arxiv"`
@@ -151,27 +154,28 @@ type AcademicConfig struct {
 // ── CleanFetch 配置 ──
 
 type CleanFetchConfig struct {
-	Enabled        bool   `mapstructure:"enabled"`          // 总开关（默认 false，旧配置不启用）
-	FileOutputDir  string `mapstructure:"file_output_dir"`  // 大文本文件输出目录（默认 os.TempDir()/webfetch/）
-	FileTTL        int    `mapstructure:"file_ttl_hours"`   // 文件保留时长（小时），默认 24
-	MaxInlineLines int    `mapstructure:"max_inline_lines"` // 内联返回最大行数（默认 100）
-	MaxInlineChars int    `mapstructure:"max_inline_chars"` // 内联返回最大字符数（默认 0 = 不限）
-	TimeoutSec     int    `mapstructure:"timeout_sec"`      // 单次请求超时（秒），默认 30
+	Enabled        bool   `mapstructure:"enabled"`           // 总开关（默认 false，旧配置不启用）
+	FileOutputDir  string `mapstructure:"file_output_dir"`   // 大文本文件输出目录（默认 os.TempDir()/webfetch/）
+	FileTTL        int    `mapstructure:"file_ttl_hours"`    // 文件保留时长（小时），默认 24
+	MaxInlineLines int    `mapstructure:"max_inline_lines"`  // 内联返回最大行数（默认 100）
+	MaxInlineChars int    `mapstructure:"max_inline_chars"`  // 内联返回最大字符数（默认 0 = 不限）
+	TimeoutSec     int    `mapstructure:"timeout_sec"`       // 单次请求超时（秒），默认 30
 	MaxFetchSizeMB int    `mapstructure:"max_fetch_size_mb"` // 最大抓取文件大小（MB），HEAD 预检用，默认 10
-	UseSystemProxy bool   `mapstructure:"use_system_proxy"` // 自动使用系统代理（默认 false）
+	UseSystemProxy bool   `mapstructure:"use_system_proxy"`  // 自动使用系统代理（默认 false）
 	MaxRetries     int    `mapstructure:"max_retries"`       // 最大重试次数（默认 3）
 }
 
 // ── PDF 解析配置 ──
 
 type PDFParserConfig struct {
-	Enabled       bool   `mapstructure:"enabled"`        // 总开关（默认 false）
-	MinerUToken   string `mapstructure:"mineru_token"`   // MinerU API Token（精准解析 API 需要）
-	MinerUModel   string `mapstructure:"mineru_model"`   // 模型版本: pipeline(默认) / vlm
-	MinerUOcr     bool   `mapstructure:"mineru_ocr"`    // OCR 识别（默认 false）
-	MinerUFormula *bool  `mapstructure:"mineru_formula"` // 公式识别（nil=默认 true）
-	MinerUTable   *bool  `mapstructure:"mineru_table"`   // 表格识别（nil=默认 true）
-	MinerULang    string `mapstructure:"mineru_lang"`    // 文档语言（默认 ch）
+	Enabled         bool   `mapstructure:"enabled"`           // 总开关（默认 false）
+	MinerUToken     string `mapstructure:"mineru_token"`      // MinerU API Token（精准解析 API 需要）
+	MinerUModel     string `mapstructure:"mineru_model"`      // 模型版本: pipeline(默认) / vlm
+	MinerUOcr       bool   `mapstructure:"mineru_ocr"`        // OCR 识别（默认 false）
+	MinerUFormula   *bool  `mapstructure:"mineru_formula"`    // 公式识别（nil=默认 true）
+	MinerUTable     *bool  `mapstructure:"mineru_table"`      // 表格识别（nil=默认 true）
+	MinerULang      string `mapstructure:"mineru_lang"`       // 文档语言（默认 ch）
+	MinerURemotePDF bool   `mapstructure:"mineru_remote_pdf"` // 远程 PDF URL 走 MinerU 精准 API（默认 true；false 则远程一律不走 MinerU，只保留本地 PDF OCR 回退）
 }
 
 // MinerUEnabled 返回是否需要初始化 MinerU 客户端。
@@ -286,7 +290,7 @@ type LLMConfig struct {
 }
 
 type CacheConfig struct {
-	Enabled         *bool  `mapstructure:"enabled"`           // 缓存总开关（默认 nil = 按 storage_path 判断；显式 false 强制禁用；显式 true 强制启用）
+	Enabled         *bool  `mapstructure:"enabled"`          // 缓存总开关（默认 nil = 按 storage_path 判断；显式 false 强制禁用；显式 true 强制启用）
 	StoragePath     string `mapstructure:"storage_path"`     // SQLite 数据库文件存储路径
 	CleanupInterval int    `mapstructure:"cleanup_interval"` // 清理间隔（分钟），默认30分钟，最大360分钟
 }
@@ -303,12 +307,12 @@ type LogConfig struct {
 
 // SmartSearchConfig smartsearch 工具高级配置。
 type SmartSearchConfig struct {
-	MaxSize int                          `mapstructure:"max_size"`  // 全局最大结果数（按 score 排序后截断），0 = 不限
-	ShowMeta bool                        `mapstructure:"show_meta"` // 输出中是否显示引擎来源和 score（默认 true）
-	Enhance  *bool                        `mapstructure:"enhance"`   // 是否启用 Wigolo 本地评分增强（RRF+词汇对齐+域名品质+多层 Boost），默认 true
-	RelevanceThreshold float64           `mapstructure:"relevance_threshold"` // 增强评分后的相关性阀值，低于此值丢弃（Top-1/每引擎保底），默认 0.05
-	MMR             MMRConfig            `mapstructure:"mmr"`                 // MMR 多样性重排配置
-	Engines  map[string]SmartSearchEngine `mapstructure:"engines"`   // 按引擎名配置
+	MaxSize            int                          `mapstructure:"max_size"`            // 全局最大结果数（按 score 排序后截断），0 = 不限
+	ShowMeta           bool                         `mapstructure:"show_meta"`           // 输出中是否显示引擎来源和 score（默认 true）
+	Enhance            *bool                        `mapstructure:"enhance"`             // 是否启用 Wigolo 本地评分增强（RRF+词汇对齐+域名品质+多层 Boost），默认 true
+	RelevanceThreshold float64                      `mapstructure:"relevance_threshold"` // 增强评分后的相关性阀值，低于此值丢弃（Top-1/每引擎保底），默认 0.05
+	MMR                MMRConfig                    `mapstructure:"mmr"`                 // MMR 多样性重排配置
+	Engines            map[string]SmartSearchEngine `mapstructure:"engines"`             // 按引擎名配置
 }
 
 // MMRConfig MMR（Maximal Marginal Relevance）多样性重排配置。
@@ -483,6 +487,18 @@ func Load(configPath string) (*Config, error) {
 		conf.Port = 8338
 	}
 
+	// 监听地址默认只绑回环，避免局域网任意主机访问业务端点
+	if conf.Host == "" {
+		conf.Host = "127.0.0.1"
+	}
+
+	// API 上游超时默认 30s；显式 0 = 不设超时（有挂起风险，文档已注明）
+	if !viper.IsSet("upstream_timeout_sec") {
+		conf.UpstreamTimeoutSec = 30
+	} else if conf.UpstreamTimeoutSec < 0 {
+		conf.UpstreamTimeoutSec = 30 // 负值视为无效，回退默认
+	}
+
 	if conf.Log.MaxSize <= 0 {
 		conf.Log.MaxSize = 1
 	}
@@ -535,6 +551,11 @@ func Load(configPath string) (*Config, error) {
 		conf.CleanFetch.MaxRetries = 3
 	}
 
+	// MinerU 远程 PDF 精准解析默认开启（false 则远程 URL 一律不走 MinerU）
+	if !viper.IsSet("pdf_parser.mineru_remote_pdf") {
+		conf.PDFParser.MinerURemotePDF = true
+	}
+
 	// 代理：标记用户显式禁用（enabled: false），跳过自动检测
 	if viper.IsSet("proxy.enabled") && !viper.GetBool("proxy.enabled") {
 		conf.Proxy.autoDisabled = true
@@ -564,6 +585,10 @@ func Load(configPath string) (*Config, error) {
 		conf.SmartSearch.MMR.Lambda = 0.7
 	}
 
+	// 环境变量回填：精简 yaml 缺字段时（如未写 tavily.api_key），
+	// viper 的 BindEnv 不会为不存在的 key 生效，这里显式覆盖。
+	applyKnownEnv(&conf)
+
 	return &conf, nil
 }
 
@@ -571,13 +596,15 @@ func Load(configPath string) (*Config, error) {
 func Default() *Config {
 	enhance := true
 	conf := &Config{
-		Port:    8338,
-		Mode:    ModeEngine,
-		Network: "china",
-		Log:     LogConfig{MaxSize: 1, MaxAge: 1},
-		Baidu:   BaiduConfig{EnableAISearch: true},
-		Bing:    BingConfig{Enabled: true},
-		DuckDuckGo: DuckDuckGoConfig{Enabled: true},
+		Port:               8338,
+		Host:               "127.0.0.1",
+		UpstreamTimeoutSec: 30,
+		Mode:               ModeEngine,
+		Network:            "china",
+		Log:                LogConfig{MaxSize: 1, MaxAge: 1},
+		Baidu:              BaiduConfig{EnableAISearch: true},
+		Bing:               BingConfig{Enabled: true},
+		DuckDuckGo:         DuckDuckGoConfig{Enabled: true},
 		Academic: AcademicConfig{
 			Enabled:      true,
 			BingFallback: true,
@@ -590,6 +617,9 @@ func Default() *Config {
 			TimeoutSec:     30,
 			MaxFetchSizeMB: 10,
 			MaxRetries:     3,
+		},
+		PDFParser: PDFParserConfig{
+			MinerURemotePDF: true,
 		},
 		SmartSearch: SmartSearchConfig{
 			ShowMeta:           true,
@@ -648,6 +678,21 @@ func applyKnownEnv(conf *Config) {
 	if v := os.Getenv("MINERU_TOKEN"); v != "" {
 		conf.PDFParser.MinerUToken = v
 	}
+	if v := os.Getenv("WEBSEARCH_TOKEN"); v != "" {
+		conf.AuthToken = v
+	}
+}
+
+// EnsureExampleFile 确保目标路径存在可编辑的预设配置文件。
+// 文件不存在时写入 ExampleConfig；已存在时不覆盖（幂等）。
+func EnsureExampleFile(path string) (created bool, err error) {
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	}
+	if err := os.WriteFile(path, ExampleConfig, 0644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func GetConfigDir() string {

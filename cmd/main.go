@@ -1,15 +1,19 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"websearch/pkg/config"
 	"websearch/pkg/daemon"
 	"websearch/pkg/log"
 	"websearch/server"
+
+	"github.com/spf13/viper"
 )
 
 var version = "dev"
@@ -34,13 +38,16 @@ func runStart(conf *config.Config) {
 	// 启动新服务，初始引用计数为 1
 	srv := server.New()
 	srv.SetRefCount(1)
-	if err := daemon.WritePID(os.Getpid(), conf.Port); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write PID file: %v\n", err)
+
+	// 监听成功后才写 PID（回调），端口占用时不会留下脏 PID 文件
+	if err := srv.Run(*conf, func() {
+		if err := daemon.WritePID(os.Getpid(), conf.Port); err != nil {
+			log.Errf("failed to write PID file: %v", err)
+		}
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to start server: %v\n", err)
 		os.Exit(1)
 	}
-	
-	// 启动服务
-	srv.Run(*conf)
 }
 
 func runStop(conf *config.Config) {
@@ -169,12 +176,29 @@ func main() {
 	// 对于其他命令，加载配置
 	conf, err := config.Load(configPath)
 	if err != nil {
-		// 对于 stop/kill/status，尝试在无配置时也能执行基本操作
-		if args[0] == "kill" || args[0] == "stop" || args[0] == "status" {
-			conf = &config.Config{Port: 8338} // 使用默认端口尝试
-		} else {
-			fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
-			os.Exit(1)
+		// start 且未显式指定配置路径时：首次运行自动生成可编辑的预设 config.yaml
+		if args[0] == "start" && configPath == "" && os.Getenv("WEBSEARCH_CONFIG") == "" {
+			var notFound viper.ConfigFileNotFoundError
+			if errors.As(err, &notFound) {
+				if exePath, exeErr := os.Executable(); exeErr == nil {
+					presetPath := filepath.Join(filepath.Dir(exePath), "config.yaml")
+					if created, werr := config.EnsureExampleFile(presetPath); werr == nil {
+						if created {
+							fmt.Printf("已生成预设配置: %s（可直接编辑）\n", presetPath)
+						}
+						conf, err = config.Load(presetPath)
+					}
+				}
+			}
+		}
+		if err != nil {
+			// 对于 stop/kill/status，尝试在无配置时也能执行基本操作
+			if args[0] == "kill" || args[0] == "stop" || args[0] == "status" {
+				conf = &config.Config{Port: 8338} // 使用默认端口尝试
+			} else {
+				fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 

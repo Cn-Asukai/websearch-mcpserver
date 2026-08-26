@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -14,31 +15,43 @@ import (
 type ProxyResolver func() string
 
 // dynamicProxyTransport 每次请求动态解析代理端点的 transport。
+// 按「当前 endpoint 字符串」缓存 *http.Transport：endpoint 不变则复用（连接池不丢），
+// endpoint 变化才新建；无代理（空串）也缓存一条 Proxy: nil 的 transport，禁止每请求 Clone。
 type dynamicProxyTransport struct {
 	resolver ProxyResolver
 	base     *http.Transport
+
+	mu         sync.Mutex
+	byEndpoint map[string]*http.Transport
 }
 
 func (t *dynamicProxyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.resolver == nil {
 		return t.base.RoundTrip(req)
 	}
-	ep := t.resolver()
-	if ep == "" {
-		// 当前无代理，直接连接
-		clone := t.base.Clone()
-		clone.Proxy = nil
-		return clone.RoundTrip(req)
+	return t.transportFor(t.resolver()).RoundTrip(req)
+}
+
+// transportFor 返回 endpoint 对应的 transport（缓存复用）。
+// endpoint 为空或解析失败时按无代理处理，同样缓存。
+func (t *dynamicProxyTransport) transportFor(endpoint string) *http.Transport {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.byEndpoint == nil {
+		t.byEndpoint = make(map[string]*http.Transport)
 	}
-	proxyURL, err := url.Parse(ep)
-	if err != nil {
-		clone := t.base.Clone()
-		clone.Proxy = nil
-		return clone.RoundTrip(req)
+	if tr, ok := t.byEndpoint[endpoint]; ok {
+		return tr
 	}
-	clone := t.base.Clone()
-	clone.Proxy = http.ProxyURL(proxyURL)
-	return clone.RoundTrip(req)
+	tr := t.base.Clone()
+	tr.Proxy = nil
+	if endpoint != "" {
+		if proxyURL, err := url.Parse(endpoint); err == nil {
+			tr.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+	t.byEndpoint[endpoint] = tr
+	return tr
 }
 
 // defaultBaseTransport 返回带合理超时的默认 transport。
@@ -50,7 +63,7 @@ func defaultBaseTransport() *http.Transport {
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout:  15 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: false,
 		},
@@ -90,8 +103,9 @@ func NewDynamicHTTPClient(resolver ProxyResolver, timeout time.Duration) *http.C
 	return &http.Client{
 		Timeout: timeout,
 		Transport: WithRetry(&dynamicProxyTransport{
-			resolver: resolver,
-			base:     defaultBaseTransport(),
+			resolver:   resolver,
+			base:       defaultBaseTransport(),
+			byEndpoint: make(map[string]*http.Transport),
 		}),
 	}
 }
@@ -100,8 +114,8 @@ func NewDynamicHTTPClient(resolver ProxyResolver, timeout time.Duration) *http.C
 
 // retryTransport 包装底层 transport，自动处理 429 + Retry-After 限流。
 type retryTransport struct {
-	inner    http.RoundTripper
-	maxWait  time.Duration // 最大重试等待时间，超过则直接返回 429
+	inner   http.RoundTripper
+	maxWait time.Duration // 最大重试等待时间，超过则直接返回 429
 }
 
 // WithRetry 为 transport 添加 429 + Retry-After 自动重试。

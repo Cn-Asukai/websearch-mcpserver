@@ -35,6 +35,8 @@ The stdio binary uses the same config schema as the HTTP service (`config.exampl
 | Config required? | `start` **must** load a config file | **Optional**: if no file is found, in-memory defaults apply (`mode: engine`, Bing/academic on) |
 | `-c` / `WEBSEARCH_CONFIG` points to a missing file | Error and exit | Error and exit (does not silently fall back to defaults) |
 | `port` | Listen port (default 8338); admin / SearXNG depend on it | **Ignored** (no HTTP listener) |
+| `host` | Listen address (default `127.0.0.1`, loopback only) | **Ignored** (no HTTP listener) |
+| `auth_token` | Bearer token for business endpoints (empty = no auth) | **Ignored** (stdio has no HTTP surface) |
 | Console logs | stdout | **stderr** (file log remains `websearch.log`) |
 | Process management | `start`/`stop`/`kill`, refcount, PID, Windows `install` | None; the MCP client starts/stops the process |
 | SearXNG `/searxng/search` | Yes | No |
@@ -61,6 +63,8 @@ Write an example file:
 
 ```yaml
 port: 8338                  # MCP HTTP port (ignored by stdio CLI)
+host: "127.0.0.1"           # Listen address (default 127.0.0.1, loopback only; 0.0.0.0 opens all interfaces, pair with auth_token)
+auth_token: ""              # Bearer token for business endpoints (empty = no auth; env WEBSEARCH_TOKEN)
 log_level: info             # debug / info / warn / error
 mode: engine                # baidu / apipool / tavily / exa / hybrid / engine
 network: china              # china (skip overseas engines) / international

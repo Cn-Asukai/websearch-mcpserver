@@ -41,14 +41,15 @@ func runInit(configPath string) error {
 			return fmt.Errorf("failed to create config dir: %w", err)
 		}
 	}
-	if _, err := os.Stat(path); err == nil {
-		fmt.Fprintf(os.Stderr, "config already exists: %s\n", path)
-		return nil
-	}
-	if err := os.WriteFile(path, config.ExampleConfig, 0644); err != nil {
+	created, err := config.EnsureExampleFile(path)
+	if err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
-	fmt.Fprintf(os.Stderr, "wrote %s\n", path)
+	if created {
+		fmt.Fprintf(os.Stderr, "wrote %s\n", path)
+	} else {
+		fmt.Fprintf(os.Stderr, "config already exists: %s\n", path)
+	}
 	return nil
 }
 

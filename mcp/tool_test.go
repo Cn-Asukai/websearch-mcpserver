@@ -36,6 +36,9 @@ func TestCleanFetch_BothNil(t *testing.T) {
 }
 
 func TestCleanFetch_WebFetchSuccess(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	fetcher, err := webfetch.NewFromConfig(config.CleanFetchConfig{
 		Enabled:        true,
 		FileTTL:        1,
@@ -66,6 +69,9 @@ func TestCleanFetch_WebFetchSuccess(t *testing.T) {
 }
 
 func TestCleanFetch_WebFetchFail_JinaNil(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	fetcher, err := webfetch.NewFromConfig(config.CleanFetchConfig{
 		Enabled:        true,
 		FileTTL:        1,
@@ -295,11 +301,12 @@ func TestPostSearchFilter_GlobalMaxSize_WithScore(t *testing.T) {
 	}
 }
 
-func TestPostSearchFilter_DefaultMaxSize(t *testing.T) {
+func TestPostSearchFilter_NoPerEngineMaxSize_NoGlobal(t *testing.T) {
+	// 显式配置了引擎但未设 max_size（=0）：不再回落默认 4，也不截断
 	old := smartSearchConf
 	smartSearchConf = config.SmartSearchConfig{
 		Engines: map[string]config.SmartSearchEngine{
-			"bing": {}, // no MaxSize set → default 4
+			"bing": {}, // no MaxSize set
 		},
 	}
 	defer func() { smartSearchConf = old }()
@@ -312,7 +319,43 @@ func TestPostSearchFilter_DefaultMaxSize(t *testing.T) {
 		{Title: "b5", Score: 0, Engine: "bing"},
 	}
 	out := postSearchFilter(results, "bing")
-	if len(out) != 4 {
-		t.Fatalf("expected 4 (default), got %d", len(out))
+	if len(out) != 5 {
+		t.Fatalf("expected 5 (no per-engine default truncation), got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_EmptyEngines_GlobalMaxSize(t *testing.T) {
+	// 空 engines map：无 per-engine 配置时不回落默认 4，只应用全局 max_size
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		MaxSize: 10,
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := make([]search.SearchResult, 10)
+	for i := range results {
+		results[i] = search.SearchResult{Title: fmt.Sprintf("r%d", i), Score: 0, Engine: "bing"}
+	}
+	out := postSearchFilter(results, "bing")
+	if len(out) != 10 {
+		t.Fatalf("expected 10 (global max only), got %d", len(out))
+	}
+}
+
+func TestPostSearchFilter_ApipoolNoConfig_GlobalMaxSize(t *testing.T) {
+	// apipool 不在 smartsearch.engines 中：同样不应被默默截成 4
+	old := smartSearchConf
+	smartSearchConf = config.SmartSearchConfig{
+		MaxSize: 10,
+	}
+	defer func() { smartSearchConf = old }()
+
+	results := make([]search.SearchResult, 10)
+	for i := range results {
+		results[i] = search.SearchResult{Title: fmt.Sprintf("r%d", i), Score: 0, Engine: "apipool"}
+	}
+	out := postSearchFilter(results, "apipool")
+	if len(out) != 10 {
+		t.Fatalf("expected 10 (global max only), got %d", len(out))
 	}
 }

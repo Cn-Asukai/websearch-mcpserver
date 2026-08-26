@@ -8,6 +8,9 @@ import (
 )
 
 func TestArxivSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	engine := NewArxiv(antirobot.ArxivOpts{Enabled: true}, nil)
 	resp, err := engine.Search("diffusion probabilistic models", 1, antirobot.TimeRangeNone)
 	if err != nil {
@@ -52,6 +55,9 @@ func TestArxivSearch(t *testing.T) {
 }
 
 func TestCrossrefSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	engine := NewCrossref(antirobot.CrossrefOpts{Enabled: true}, nil)
 	resp, err := engine.Search("graph neural network", 1, antirobot.TimeRangeNone)
 	if err != nil {
@@ -90,6 +96,9 @@ func TestCrossrefSearch(t *testing.T) {
 }
 
 func TestOpenAlexSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	engine := NewOpenAlex(antirobot.OpenAlexOpts{Enabled: true}, nil)
 	resp, err := engine.Search("reinforcement learning from human feedback", 1, antirobot.TimeRangeNone)
 	if err != nil {
@@ -128,6 +137,9 @@ func TestOpenAlexSearch(t *testing.T) {
 }
 
 func TestSemanticScholarSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	engine := NewSemanticScholar(antirobot.SemanticScholarOpts{Enabled: true}, nil)
 	resp, err := engine.Search("retrieval augmented generation", 1, antirobot.TimeRangeNone)
 	if err != nil {

@@ -2,6 +2,35 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v3.1.0 — 2026-08-26
+
+### Security
+- **Loopback-only by default**: new `host` option (default `127.0.0.1`); the daemon no longer binds all interfaces by default. An Error-level warning is logged at startup when `0.0.0.0`/`::` is used without a token
+- **Optional Bearer auth for business endpoints**: new `auth_token` (env `WEBSEARCH_TOKEN`); `/mcp` and `/searxng/search` accept `Authorization: Bearer` or `X-API-Key`. No token configured = no auth (backward compatible); `__admin/*` keeps the local-only protocol
+
+### Fixed
+- **30s default upstream timeout**: `pkg/client` DefaultClient now sets a timeout (configurable via `upstream_timeout_sec`, 0 = no timeout); a black-hole upstream can no longer hang MCP tools forever
+- **KeyPool concurrency bug**: search adapters return errors carrying the actual key used; apipool cools down the exact key. `MarkLastInvalid` is marked not concurrency-safe and banned for new code
+- **Single SearchGroup**: MCP and SearXNG now share one engine set (`GetSearchGroup`) — rate limits and key state no longer split. SearXNG returns 400 for empty `q` and 503 when no engine is available instead of panicking
+- **Single-engine results no longer silently capped at 4**: without per-engine `max_size`, only the global `max_size` applies; apipool/baidu_ai result counts are configurable again
+- **hybrid logs engine failures**: Warn log per failed engine + error summary when all fail (no API keys in logs)
+- **Proxy transport cached per endpoint**: no per-request `Clone`, connection pooling works again; system proxy detection gets a 10s TTL cache
+- **WinHTTP proxy string out-of-bounds**: UTF-16 read is bounded by the buffer up to NUL; the fixed 512-uint16 cast is gone
+- **MinerU only for PDF URLs**: remote URLs go to the precise API only when the path ends with `.pdf` (disable via `mineru_remote_pdf`, default true); plain web pages no longer burn MinerU quota
+- **viper env backfill**: `Load()` now calls `applyKnownEnv` explicitly, so `TAVILY_SK` etc. work even when the yaml omits the field
+- **Shutdown order**: HTTP Shutdown first, then WebFetch/SQLite close — in-flight requests no longer hit `sql: database is closed`
+- **start TOCTOU / stale PID**: PID is written only after the listener is bound; port-in-use returns an error instead of panicking
+- **Jina private-IP check**: `net.ParseIP` + `IsPrivate()`; public ranges like `172.32.0.0/11` are no longer misclassified
+- **Cache upsert**: unique index on `(query, intent, academic)` + `ON CONFLICT DO UPDATE`; legacy duplicate rows are cleaned on open
+- **daemon PostShutdown leak**: response body closed properly; **CleanupScheduler.Stop** now actually waits for the goroutine (cancellable)
+
+### Changed
+- **"Zero config" = an editable preset yaml**: the first `start` (without `-c`) writes a `config.yaml` identical to `config.example.yaml` next to the executable; `install` / `cli init` share `EnsureExampleFile` (idempotent, never overwrites user edits)
+- Network integration tests uniformly skip under `testing.Short()` (Bing / Crossref / arXiv / OpenAlex / Semantic Scholar / Google Scholar); `go test -short ./...` makes no external requests
+
+### Docs
+- Config / install / API docs (EN & ZH) updated for `host`, `auth_token`, `upstream_timeout_sec`, `mineru_remote_pdf`; MCP client registration shows headers examples; README notes that Google / DDG / Crossref / Google Scholar are unstable on direct China connections
+
 ## v3.0 — 2026-08-20
 
 ### Added

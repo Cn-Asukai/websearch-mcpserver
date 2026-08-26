@@ -83,12 +83,16 @@ go build -ldflags="-X main.version=v1.0.0" -o websearch-mcp-cli ./cmd/cli
 
 服务启动后（HTTP daemon 监听 `http://localhost:8338/mcp`），按客户端注册。以下同时给出 **Claude Code** 与 **Qwen Code** 两种配置方式。
 
+> **鉴权**：若配置了 `auth_token`（或环境变量 `WEBSEARCH_TOKEN`），客户端需携带 `Authorization: Bearer <token>` 头访问 `/mcp` 与 `/searxng/search`，否则返回 401。未配置 token 时无需任何头。
+
 ### Claude Code
 
 **命令行**：
 
 ```bash
 claude mcp add --transport http websearch http://localhost:8338/mcp
+# 配置了 auth_token 时：
+claude mcp add --transport http websearch http://localhost:8338/mcp --header "Authorization: Bearer <token>"
 ```
 
 **JSON**（`.claude.json` / `mcp.json`）：
@@ -98,7 +102,10 @@ claude mcp add --transport http websearch http://localhost:8338/mcp
   "mcpServers": {
     "websearch": {
       "type": "http",
-      "url": "http://localhost:8338/mcp"
+      "url": "http://localhost:8338/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }
@@ -120,11 +127,16 @@ qwen mcp add --transport http websearch http://localhost:8338/mcp
 {
   "mcpServers": {
     "websearch": {
-      "httpUrl": "http://localhost:8338/mcp"
+      "httpUrl": "http://localhost:8338/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }
 ```
+
+> 未配置 `auth_token` 时省略 `headers` 即可。
 
 Qwen Code 常用参数：
 
@@ -234,6 +246,8 @@ chmod +x /usr/local/bin/websearch-mcpserver
 # Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "C:\tools\websearch-mcpserver.exe"
 
 # 2. 写入最小配置（零 Key 即可运行）
+# 也可以跳过本步：首次 start 会在可执行文件目录自动生成一份与 config.example.yaml
+# 相同的预设 config.yaml（显式 -c 指定路径时不会自动生成，文件缺失会报错）
 mkdir -p ~/.config/websearch
 cat > ~/.config/websearch/config.yaml << 'EOF'
 port: 8338
@@ -243,6 +257,8 @@ EOF
 # 3. 启动并注册（见上方「注册 MCP 客户端」）
 ./websearch-mcpserver start
 ```
+
+> **「零配置」的含义**：`install` / `websearch-mcp-cli init` / 首次 `start`（未指定 `-c`）会自动生成一份与 `config.example.yaml` 相同的预设 `config.yaml`，之后改端口、Key、模式都改这一份文件。服务**不会**在没有任何配置文件时靠内存隐式默认值运行。
 
 Windows 自启动（可选）：下载后执行 `websearch-mcpserver.exe install`。
 

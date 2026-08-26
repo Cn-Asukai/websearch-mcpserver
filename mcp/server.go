@@ -99,7 +99,27 @@ func RegisterRouter(mux *http.ServeMux, conf config.Config) {
 	}, &mcp.StreamableHTTPOptions{
 		SessionTimeout: 5 * time.Minute,
 	})
-	mux.Handle("/mcp", http.StripPrefix("/mcp", handler))
+	mux.Handle("/mcp", AuthMiddleware(conf, http.StripPrefix("/mcp", handler)))
+}
+
+// AuthMiddleware 业务端点鉴权中间件。
+// Authorization: Bearer <token> 或 X-API-Key: <token> 任一通过；token 为空时不鉴权。
+func AuthMiddleware(conf config.Config, next http.Handler) http.Handler {
+	if conf.AuthToken == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if strings.HasPrefix(token, "Bearer ") {
+			token = strings.TrimPrefix(token, "Bearer ")
+		}
+		if token == conf.AuthToken || r.Header.Get("X-API-Key") == conf.AuthToken {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="websearch"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	})
 }
 
 // RunStdio 在 stdin/stdout 上运行 MCP（JSON-RPC NDJSON）。调用前须完成 Init。

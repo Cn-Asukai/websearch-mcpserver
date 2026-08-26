@@ -9,15 +9,15 @@ import (
 
 // BaiduAISearchImpl 百度智能搜索（chat/completions），返回 LLM 生成的回答 + 参考来源。
 type BaiduAISearchImpl struct {
-	name            string
-	keys            *KeyPool
-	blacklist       []string
-	recency         string
-	model           string
-	searchSource    string
-	enableReasoning bool
+	name             string
+	keys             *KeyPool
+	blacklist        []string
+	recency          string
+	model            string
+	searchSource     string
+	enableReasoning  bool
 	enableDeepSearch bool
-	searchMode      string
+	searchMode       string
 }
 
 // 百度智能搜索请求/响应结构体
@@ -28,18 +28,18 @@ type baiduAIReqMsg struct {
 }
 
 type baiduAIReq struct {
-	Messages          []baiduAIReqMsg         `json:"messages"`
-	Model             string                  `json:"model,omitempty"`
-	SearchSource      string                  `json:"search_source,omitempty"`
-	ResourceTypeFilter []baiduSearchTypeFliter `json:"resource_type_filter,omitempty"`
-	SearchRecencyFilter string                `json:"search_recency_filter,omitempty"`
-	BlockWebsites     []string                `json:"block_websites,omitempty"`
-	Stream            bool                    `json:"stream"`
-	EnableReasoning   bool                    `json:"enable_reasoning,omitempty"`
-	EnableDeepSearch  bool                    `json:"enable_deep_search,omitempty"`
-	SearchMode        string                  `json:"search_mode,omitempty"`
-	Temperature       float64                 `json:"temperature,omitempty"`
-	TopP              float64                 `json:"top_p,omitempty"`
+	Messages            []baiduAIReqMsg         `json:"messages"`
+	Model               string                  `json:"model,omitempty"`
+	SearchSource        string                  `json:"search_source,omitempty"`
+	ResourceTypeFilter  []baiduSearchTypeFliter `json:"resource_type_filter,omitempty"`
+	SearchRecencyFilter string                  `json:"search_recency_filter,omitempty"`
+	BlockWebsites       []string                `json:"block_websites,omitempty"`
+	Stream              bool                    `json:"stream"`
+	EnableReasoning     bool                    `json:"enable_reasoning,omitempty"`
+	EnableDeepSearch    bool                    `json:"enable_deep_search,omitempty"`
+	SearchMode          string                  `json:"search_mode,omitempty"`
+	Temperature         float64                 `json:"temperature,omitempty"`
+	TopP                float64                 `json:"top_p,omitempty"`
 }
 
 type baiduAIChoiceMsg struct {
@@ -112,8 +112,8 @@ func (b *BaiduAISearchImpl) SearchRawWithTimeRange(query string, lookbackDays in
 
 func (b *BaiduAISearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	req := baiduAIReq{
-		Messages: []baiduAIReqMsg{{Content: query, Role: "user"}},
-		Model:    b.model,
+		Messages:            []baiduAIReqMsg{{Content: query, Role: "user"}},
+		Model:               b.model,
 		SearchSource:        b.searchSource,
 		ResourceTypeFilter:  []baiduSearchTypeFliter{{Type: "web", TopK: 5}},
 		SearchRecencyFilter: b.recency,
@@ -125,16 +125,17 @@ func (b *BaiduAISearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	}
 
 	var resp baiduAIResponse
+	key := b.keys.Next()
 	res, err := client.DefaultClient.R().
-		SetHeader("X-Appbuilder-Authorization", fmt.Sprintf("Bearer %s", b.keys.Next())).
+		SetHeader("X-Appbuilder-Authorization", fmt.Sprintf("Bearer %s", key)).
 		SetBody(req).
 		SetResult(&resp).
 		Post("https://qianfan.baidubce.com/v2/ai_search/chat/completions")
 	if err != nil {
-		return nil, fmt.Errorf("百度智能搜索api 调用失败，%w", err)
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("百度智能搜索api 调用失败，%w", err)}
 	}
 	if res.StatusCode() != 200 {
-		return nil, fmt.Errorf("百度智能搜索api 返回错误状态码: %d", res.StatusCode())
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("百度智能搜索api 返回错误状态码: %d", res.StatusCode())}
 	}
 	if len(resp.References) == 0 && len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("百度智能搜索api 内容为空")

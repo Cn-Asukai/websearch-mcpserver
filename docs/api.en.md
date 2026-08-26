@@ -58,10 +58,10 @@ Returns the current reference count value.
 #### `(*Server) Run`
 
 ```go
-func (s *Server) Run(conf config.Config)
+func (s *Server) Run(conf config.Config, onListening ...func()) error
 ```
 
-Full startup flow: initializes search engine, MCP routes, SearXNG routes, Admin routes, cache cleanup goroutine, then starts HTTP Server and blocks until `SIGINT`/`SIGTERM` signal or reference count reaches zero. On exit, performs graceful shutdown (stop cache cleanup → close SQLite → HTTP Shutdown → clean PID file).
+Full startup flow: initializes search engine, MCP routes, SearXNG routes, Admin routes, cache cleanup goroutine, then listens on the port (default `127.0.0.1:8338`) and blocks until `SIGINT`/`SIGTERM` signal or reference count reaches zero. `onListening` callbacks run only after the listener is bound (e.g. write the PID file); a listen failure (e.g. port in use) returns an error instead of panicking. On exit, performs graceful shutdown (stop cache cleanup → HTTP Shutdown → close WebFetch → close SQLite → clean PID file).
 
 Suitable for CLI or standalone deployment scenarios.
 
@@ -194,6 +194,8 @@ claude mcp add --transport http websearch-mcp http://localhost:8338/mcp
 | Content-Type | `application/json` |
 
 Provides a SearXNG-compatible search interface, works with LiteLLM and similar frameworks.
+
+> **Auth**: when `auth_token` is set, requests must carry `Authorization: Bearer <token>` or `X-API-Key: <token>`, otherwise 401; empty `q` returns 400; no engine available returns 503.
 
 #### Request Example
 

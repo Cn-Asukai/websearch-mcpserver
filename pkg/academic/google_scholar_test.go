@@ -9,6 +9,9 @@ import (
 )
 
 func TestGoogleScholarSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	engine := NewGoogleScholar(antirobot.GoogleScholarOpts{Enabled: true}, nil)
 	resp, err := engine.Search("chain of thought prompting", 1, antirobot.TimeRangeNone)
 	if err != nil {

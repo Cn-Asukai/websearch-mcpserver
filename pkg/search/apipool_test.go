@@ -1,7 +1,10 @@
 package search
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -281,6 +284,105 @@ func TestApipool_SearchRawWithTimeRange(t *testing.T) {
 	}
 }
 
+// ── KeyError 精确标记 ──────────────────────────────────────────────────────
+
+// keyErrorEngine 模拟真实引擎：Next() 取 key，失败时返回携带该 key 的 KeyError。
+type keyErrorEngine struct {
+	pool     *KeyPool
+	failKeys map[string]bool
+	gotKey   chan struct{} // 每次 Next 后发信号（非 nil 时）
+	release  chan struct{} // 放行失败（非 nil 时）
+}
+
+func (e *keyErrorEngine) Name() string { return "keyerr" }
+func (e *keyErrorEngine) Search(query string) (string, error) {
+	return "", nil
+}
+func (e *keyErrorEngine) SearchRaw(query string) ([]SearchResult, error) {
+	key := e.pool.Next()
+	if e.gotKey != nil {
+		e.gotKey <- struct{}{}
+	}
+	if e.release != nil {
+		<-e.release
+	}
+	if e.failKeys[key] {
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("boom")}
+	}
+	return []SearchResult{{Title: "ok", Url: "http://ok.com", Engine: "keyerr"}}, nil
+}
+func (e *keyErrorEngine) MergeContent(query string, results []SearchResult) (string, error) {
+	return "", nil
+}
+
+// TestKeyError_ErrorHidesKey KeyError.Error() 不得泄漏 Key 本身（日志安全）。
+func TestKeyError_ErrorHidesKey(t *testing.T) {
+	ke := &KeyError{Key: "sk-secret-123", Err: fmt.Errorf("auth fail")}
+	if strings.Contains(ke.Error(), "sk-secret-123") {
+		t.Errorf("KeyError.Error() 不应包含 Key: %s", ke.Error())
+	}
+	var got *KeyError
+	if !errors.As(fmt.Errorf("wrap: %w", ke), &got) || got.Key != "sk-secret-123" {
+		t.Error("errors.As 应取出 KeyError 及 Key")
+	}
+}
+
+// TestApipool_KeyError_MarksUsedKey 单 goroutine：KeyError 的 key 被精确冷却。
+func TestApipool_KeyError_MarksUsedKey(t *testing.T) {
+	pool, _ := NewKeyPool([]string{"k1", "k2"})
+	e := &keyErrorEngine{pool: pool, failKeys: map[string]bool{"k1": true}}
+	ap := NewApipoolSearch("round-robin", apipoolProvider{engine: e, pool: pool})
+	results, err := ap.SearchRaw("test")
+	if err != nil {
+		t.Fatalf("k2 应重试成功, got err=%v", err)
+	}
+	if len(results) != 1 || results[0].Title != "ok" {
+		t.Fatalf("expected ok result, got %v", results)
+	}
+	// k1 被冷却，k2 仍可用
+	if pool.Available() != 1 {
+		t.Fatalf("expected 1 available (k2), got %d", pool.Available())
+	}
+	if got := pool.Next(); got != "k2" {
+		t.Errorf("expected next key k2, got %s", got)
+	}
+}
+
+// TestApipool_ConcurrentKeyError_CoolsOwnKey 并发：两个 goroutine 交错 Next + 失败，
+// 各自冷却自己的 key，不误伤对方（旧 MarkLastInvalid 会标错 key）。
+func TestApipool_ConcurrentKeyError_CoolsOwnKey(t *testing.T) {
+	pool, _ := NewKeyPool([]string{"k1", "k2"})
+	e := &keyErrorEngine{
+		pool:     pool,
+		failKeys: map[string]bool{"k1": true}, // k1 坏，k2 好
+		gotKey:   make(chan struct{}, 4),
+		release:  make(chan struct{}),
+	}
+	ap := NewApipoolSearch("round-robin", apipoolProvider{engine: e, pool: pool})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			defer wg.Done()
+			_, _ = ap.SearchRaw("test")
+		}()
+	}
+	// 等两个 goroutine 都完成首次 Next（交错完成），再放行失败
+	<-e.gotKey
+	<-e.gotKey
+	close(e.release)
+	wg.Wait()
+
+	// 只有 k1（坏 key）被冷却，k2（好 key）必须保持可用
+	if pool.Available() != 1 {
+		t.Fatalf("expected only k1 cooled (1 available), got %d", pool.Available())
+	}
+	if got := pool.Next(); got != "k2" {
+		t.Errorf("expected k2 still available, got %s", got)
+	}
+}
+
 // ── 辅助类型 ──────────────────────────────────────────────────────────────
 
 // timeRangeRecorder 记录 SearchRawWithTimeRange 调用参数。
@@ -291,9 +393,9 @@ type timeRangeRecorder struct {
 	lastLookback int
 }
 
-func (t *timeRangeRecorder) Name() string                                    { return t.name }
-func (t *timeRangeRecorder) Search(query string) (string, error)             { return "", nil }
-func (t *timeRangeRecorder) SearchRaw(query string) ([]SearchResult, error)  { return t.results, t.err }
+func (t *timeRangeRecorder) Name() string                                   { return t.name }
+func (t *timeRangeRecorder) Search(query string) (string, error)            { return "", nil }
+func (t *timeRangeRecorder) SearchRaw(query string) ([]SearchResult, error) { return t.results, t.err }
 func (t *timeRangeRecorder) MergeContent(_ string, _ []SearchResult) (string, error) {
 	return "", nil
 }

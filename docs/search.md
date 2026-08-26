@@ -72,6 +72,8 @@
 | `semantic_scholar` | 语义学术（默认禁用） | 是（自动检测） |
 | `google_scholar` | 全学科学术搜索（默认禁用） | 是（自动检测） |
 
+> **网络可用性**：Google / DuckDuckGo / Crossref / Google Scholar 在 `network: china` 且无代理时不稳定（可能超时或被反爬拦截）；Bing 网页抓取亦可能超时。失败引擎自动跳过/回退，不影响其他引擎结果。
+
 ---
 
 ## 相关性评分

@@ -7,6 +7,18 @@
 # MCP HTTP 服务监听端口（stdio CLI 忽略此字段）
 port: 8338
 
+# 监听地址（默认 127.0.0.1，只允许本机访问）
+# 需要局域网/公网访问时改为 0.0.0.0，并强烈建议同时配置 auth_token
+# host: "127.0.0.1"
+
+# 业务端点鉴权 token（可选，默认空 = 不鉴权）
+# 配置后访问 /mcp 与 /searxng/search 需携带 Authorization: Bearer <token> 或 X-API-Key: <token>
+# 环境变量: WEBSEARCH_TOKEN
+# auth_token: ""
+
+# API 上游超时（秒），默认 30；显式 0 = 不设超时（上游黑洞时请求可能永久挂起，不建议）
+# upstream_timeout_sec: 30  # API 上游超时（秒），0 = 不设超时
+
 # 日志级别: debug / info / warn / error（默认 info）
 log_level: info
 
@@ -198,6 +210,7 @@ pdf_parser:
   # mineru_formula: true      # 公式识别（默认 true）
   # mineru_table: true        # 表格识别（默认 true）
   # mineru_lang: "ch"         # 文档语言（默认 ch，中英文）
+  # mineru_remote_pdf: true  # 远程 PDF URL 走 MinerU 精准 API（默认 true，false 则远程一律不走 MinerU）
 
 # ==============================================
 # 日志文件滚动配置（可选）

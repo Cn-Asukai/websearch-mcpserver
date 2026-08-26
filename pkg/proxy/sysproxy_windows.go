@@ -16,9 +16,9 @@ const (
 
 // internetProxyInfo 对应 Windows INTERNET_PROXY_INFO 结构。
 type internetProxyInfo struct {
-	AccessType    uint32
-	Proxy         *uint16
-	ProxyBypass   *uint16
+	AccessType  uint32
+	Proxy       *uint16
+	ProxyBypass *uint16
 }
 
 // proxyFromOS 读取 Windows 系统代理设置。
@@ -161,7 +161,7 @@ func regQueryString(h syscall.Handle, name string) (string, bool) {
 		return "", false
 	}
 	// UTF-16LE → string
-	u16 := (*[512]uint16)(unsafe.Pointer(&buf[0]))[:bufLen/2:bufLen/2]
+	u16 := (*[512]uint16)(unsafe.Pointer(&buf[0]))[: bufLen/2 : bufLen/2]
 	// 去掉尾部 NUL
 	for i, c := range u16 {
 		if c == 0 {
@@ -192,12 +192,18 @@ func proxyFromWinHTTP() string {
 		return ""
 	}
 
+	// 缓冲区至少容纳 INTERNET_PROXY_INFO 结构，否则无法安全读取
+	if bufLen < uint32(unsafe.Sizeof(internetProxyInfo{})) {
+		return ""
+	}
+
 	info := (*internetProxyInfo)(unsafe.Pointer(&buf[0]))
 	if info.Proxy == nil {
 		return ""
 	}
 
-	proxy := syscall.UTF16ToString((*[512]uint16)(unsafe.Pointer(info.Proxy))[:256:256])
+	// 在 buf 范围内从 info.Proxy 读 UTF-16 至 NUL（按缓冲区边界截断，禁止定长强转越界）
+	proxy := utf16PtrToString(info.Proxy, buf)
 	if proxy == "" {
 		return ""
 	}

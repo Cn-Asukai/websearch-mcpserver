@@ -16,18 +16,18 @@ type ExaSearchImpl struct {
 	name           string
 	keys           *KeyPool
 	numResults     int
-	lookbackDays   int      // 搜索时间范围（天），默认 90
+	lookbackDays   int // 搜索时间范围（天），默认 90
 	excludeDomains []string
 }
 
 type exaSearchReq struct {
-	Query              string         `json:"query"`
-	NumResults         int            `json:"numResults,omitempty"`
-	StartPublishedDate string         `json:"startPublishedDate,omitempty"`
-	EndPublishedDate   string         `json:"endPublishedDate,omitempty"`
-	ExcludeDomains     []string       `json:"excludeDomains,omitempty"`
-	Type               string         `json:"type,omitempty"`
-	Contents           exaContents    `json:"contents"`
+	Query              string      `json:"query"`
+	NumResults         int         `json:"numResults,omitempty"`
+	StartPublishedDate string      `json:"startPublishedDate,omitempty"`
+	EndPublishedDate   string      `json:"endPublishedDate,omitempty"`
+	ExcludeDomains     []string    `json:"excludeDomains,omitempty"`
+	Type               string      `json:"type,omitempty"`
+	Contents           exaContents `json:"contents"`
 }
 
 type exaContents struct {
@@ -110,17 +110,18 @@ func (e *ExaSearchImpl) SearchRaw(query string) ([]SearchResult, error) {
 	}
 
 	var resp exaSearchResp
+	key := e.keys.Next()
 	res, err := client.DefaultClient.R().
-		SetHeader("x-api-key", e.keys.Next()).
+		SetHeader("x-api-key", key).
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&resp).
 		Post(exaAPIEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("exa 搜索 API 调用失败: %w", err)
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("exa 搜索 API 调用失败: %w", err)}
 	}
 	if res.StatusCode() != 200 {
-		return nil, fmt.Errorf("exa 搜索 API 返回错误状态码: %d", res.StatusCode())
+		return nil, &KeyError{Key: key, Err: fmt.Errorf("exa 搜索 API 返回错误状态码: %d", res.StatusCode())}
 	}
 	if len(resp.Results) == 0 {
 		return nil, fmt.Errorf("exa 搜索 API 结果为空")

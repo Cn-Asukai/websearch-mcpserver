@@ -11,6 +11,9 @@ import (
 )
 
 func TestDuckDuckGoSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	resolver := func() string { return proxy.DetectSystemProxy() }
 	if resolver() == "" {
 		t.Skip("跳过: 未检测到系统代理，DuckDuckGo 需要代理")
@@ -42,6 +45,9 @@ func TestDuckDuckGoSearch(t *testing.T) {
 }
 
 func TestDuckDuckGoTimeRange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	resolver := func() string { return proxy.DetectSystemProxy() }
 	if resolver() == "" {
 		t.Skip("跳过: 未检测到系统代理")
@@ -63,6 +69,9 @@ func TestDuckDuckGoTimeRange(t *testing.T) {
 }
 
 func TestDuckDuckGoRateLimit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	resolver := func() string { return proxy.DetectSystemProxy() }
 	if resolver() == "" {
 		t.Skip("跳过: 未检测到系统代理")

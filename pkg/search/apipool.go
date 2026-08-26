@@ -1,6 +1,7 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -8,6 +9,22 @@ import (
 	"websearch/pkg/log"
 	md "websearch/pkg/xml"
 )
+
+// KeyError 携带请求失败时实际使用的 API Key，供 apipool 精确标记失效。
+// 注意：Error() 不输出 Key 本身，避免 API Key 泄漏到日志。
+type KeyError struct {
+	Key string
+	Err error
+}
+
+func (e *KeyError) Error() string {
+	if e.Err == nil {
+		return "key error"
+	}
+	return e.Err.Error()
+}
+
+func (e *KeyError) Unwrap() error { return e.Err }
 
 // apipoolProvider 单个供应商：搜索引擎 + 对应的 KeyPool（免费引擎 pool 为 nil）。
 type apipoolProvider struct {
@@ -97,7 +114,14 @@ func (a *ApipoolSearchImpl) callProviderWithRetry(p apipoolProvider, query strin
 		if err == nil {
 			return results, nil
 		}
-		p.pool.MarkLastInvalid()
+		// 优先按 KeyError 精确标记本次实际使用的 key（并发安全）；
+		// 无 KeyError（如免费引擎/内容为空等非 key 错误）时回退 MarkLastInvalid。
+		var ke *KeyError
+		if errors.As(err, &ke) {
+			p.pool.MarkInvalid(ke.Key)
+		} else {
+			p.pool.MarkLastInvalid()
+		}
 		lastErr = err
 		if p.pool.Available() == 0 {
 			return nil, fmt.Errorf("%s 所有 SK 均失败: %w", p.engine.Name(), lastErr)

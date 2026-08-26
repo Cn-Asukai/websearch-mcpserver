@@ -83,12 +83,16 @@ go build -ldflags="-X main.version=v1.0.0" -o websearch-mcp-cli ./cmd/cli
 
 After the service starts (HTTP daemon listens on `http://localhost:8338/mcp`), register it with your client. Both **Claude Code** and **Qwen Code** configurations are shown below.
 
+> **Auth**: if `auth_token` is set (or env `WEBSEARCH_TOKEN`), clients must send `Authorization: Bearer <token>` to `/mcp` and `/searxng/search`, otherwise 401. With no token, no header is needed.
+
 ### Claude Code
 
 **CLI**:
 
 ```bash
 claude mcp add --transport http websearch http://localhost:8338/mcp
+# when auth_token is set:
+claude mcp add --transport http websearch http://localhost:8338/mcp --header "Authorization: Bearer <token>"
 ```
 
 **JSON** (`.claude.json` / `mcp.json`):
@@ -98,7 +102,10 @@ claude mcp add --transport http websearch http://localhost:8338/mcp
   "mcpServers": {
     "websearch": {
       "type": "http",
-      "url": "http://localhost:8338/mcp"
+      "url": "http://localhost:8338/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }
@@ -120,11 +127,16 @@ qwen mcp add --transport http websearch http://localhost:8338/mcp
 {
   "mcpServers": {
     "websearch": {
-      "httpUrl": "http://localhost:8338/mcp"
+      "httpUrl": "http://localhost:8338/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
     }
   }
 }
 ```
+
+> Omit `headers` when `auth_token` is not configured.
 
 Qwen Code common flags:
 
@@ -234,6 +246,9 @@ chmod +x /usr/local/bin/websearch-mcpserver
 # Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "C:\tools\websearch-mcpserver.exe"
 
 # 2. Write minimal config (zero keys needed)
+# You may skip this step: the first `start` auto-generates a preset config.yaml
+# (identical to config.example.yaml) next to the executable. With an explicit
+# `-c` path, no file is auto-created and a missing file is an error.
 mkdir -p ~/.config/websearch
 cat > ~/.config/websearch/config.yaml << 'EOF'
 port: 8338
@@ -243,6 +258,8 @@ EOF
 # 3. Start and register (see "Register MCP Client" above)
 ./websearch-mcpserver start
 ```
+
+> **What "zero config" means**: `install` / `websearch-mcp-cli init` / first `start` (without `-c`) writes a preset `config.yaml` identical to `config.example.yaml`; edit that file for port/keys/mode. The daemon **never** runs on invisible in-memory defaults without a config file.
 
 Windows auto-start (optional): run `websearch-mcpserver.exe install` after download.
 

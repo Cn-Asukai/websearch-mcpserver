@@ -105,6 +105,12 @@ func Infof(pattern string, v ...any) {
 	}
 }
 
+func Warnf(pattern string, v ...any) {
+	if defaultlog != nil {
+		defaultlog.Warn().Msgf(pattern, v...)
+	}
+}
+
 func Errf(pattern string, v ...any) {
 	if defaultlog != nil {
 		defaultlog.Error().Msgf(pattern, v...)

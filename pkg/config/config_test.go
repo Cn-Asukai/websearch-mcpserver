@@ -244,3 +244,105 @@ func TestExampleConfigIsYAML(t *testing.T) {
 		t.Error("ExampleConfig should contain mode")
 	}
 }
+
+func TestDefault_HostAndAuthToken(t *testing.T) {
+	conf := Default()
+	if conf.Host != "127.0.0.1" {
+		t.Errorf("Default Host = %q, want 127.0.0.1", conf.Host)
+	}
+	if conf.AuthToken != "" {
+		t.Errorf("Default AuthToken = %q, want empty", conf.AuthToken)
+	}
+}
+
+func TestLoad_AppliesKnownEnv(t *testing.T) {
+	viper.Reset()
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	t.Setenv("TAVILY_SK", "tv-env")
+	t.Setenv("BAIDU_SK", "bd-env")
+	t.Setenv("MINERU_TOKEN", "mu-env")
+	t.Setenv("WEBSEARCH_TOKEN", "ws-token")
+
+	// 精简 yaml：缺 tavily.api_key 等字段，env 必须回填
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("port: 8338\nmode: engine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Tavily.APIKey != "tv-env" {
+		t.Errorf("Tavily.APIKey = %q, want tv-env (env backfill)", conf.Tavily.APIKey)
+	}
+	if conf.Baidu.APIKey != "bd-env" {
+		t.Errorf("Baidu.APIKey = %q, want bd-env", conf.Baidu.APIKey)
+	}
+	if conf.PDFParser.MinerUToken != "mu-env" {
+		t.Errorf("MinerUToken = %q, want mu-env", conf.PDFParser.MinerUToken)
+	}
+	if conf.AuthToken != "ws-token" {
+		t.Errorf("AuthToken = %q, want ws-token", conf.AuthToken)
+	}
+	if conf.Host != "127.0.0.1" {
+		t.Errorf("Host = %q, want 127.0.0.1 default", conf.Host)
+	}
+}
+
+func TestLoad_YAMLValueOverriddenByEnv(t *testing.T) {
+	viper.Reset()
+	t.Setenv("WEBSEARCH_CONFIG", "")
+	t.Setenv("TAVILY_SK", "tv-env")
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("tavily:\n  api_key: tv-yaml\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Tavily.APIKey != "tv-env" {
+		t.Errorf("Tavily.APIKey = %q, want tv-env (env wins over yaml)", conf.Tavily.APIKey)
+	}
+}
+
+func TestEnsureExampleFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	created, err := EnsureExampleFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Error("first call should create the file")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "mode:") {
+		t.Error("written file should contain mode:")
+	}
+
+	// 已存在 → 不覆盖
+	modified := []byte("# user edited\nmode: engine\n")
+	if err := os.WriteFile(path, modified, 0644); err != nil {
+		t.Fatal(err)
+	}
+	created, err = EnsureExampleFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Error("second call should not create/overwrite")
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(modified) {
+		t.Error("existing file content must not be overwritten")
+	}
+}

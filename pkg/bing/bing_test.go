@@ -8,6 +8,9 @@ import (
 )
 
 func TestBingSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network integration test")
+	}
 	engine := NewBing(BingOpts{Enabled: true})
 	resp, err := engine.Search("golang concurrency", 1, antirobot.TimeRangeNone)
 	if err != nil {

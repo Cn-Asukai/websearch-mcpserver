@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 	"websearch/pkg/config"
+
+	webfetch "github.com/daidaiJ/go-webfetch"
 )
 
 func newTestFetcher(t *testing.T) *Fetcher {
@@ -200,6 +202,89 @@ func TestNewFromConfigDefaults(t *testing.T) {
 		t.Fatalf("NewFromConfig with defaults failed: %v", err)
 	}
 	defer fetcher.Close()
+}
+
+// ── MinerU 仅用于 PDF URL（T03）────────────────────────────────────────────
+
+// spyMineru 记录调用次数的 MinerU 客户端替身。
+type spyMineru struct {
+	hasToken      bool
+	parseURLCalls int
+}
+
+func (s *spyMineru) HasToken() bool { return s.hasToken }
+func (s *spyMineru) ParseURL(ctx context.Context, fileURL string) (string, error) {
+	s.parseURLCalls++
+	return "# MinerU", nil
+}
+func (s *spyMineru) ParseFile(ctx context.Context, filePath string) (string, error) {
+	return "", nil
+}
+
+// stubEngine 返回固定结果的抓取引擎替身。
+type stubEngine struct{}
+
+func (e *stubEngine) Fetch(ctx context.Context, rawURL string) (*webfetch.FetchResult, error) {
+	return &webfetch.FetchResult{Title: "stub", Mode: "inline", Markdown: "stub"}, nil
+}
+func (e *stubEngine) ParsePDFFile(ctx context.Context, filePath string) (*webfetch.PDFResult, error) {
+	return &webfetch.PDFResult{Title: "stub", Mode: "inline", Markdown: "stub"}, nil
+}
+func (e *stubEngine) Close() error { return nil }
+
+func TestFetch_MineruOnlyForPDFURL(t *testing.T) {
+	tests := []struct {
+		name            string
+		rawURL          string
+		hasToken        bool
+		mineruRemotePDF bool
+		wantParse       int
+	}{
+		{"html url with token", "https://example.com/a.html", true, true, 0},
+		{"pdf url with token", "https://cdn.example.com/x.PDF?download=1", true, true, 1},
+		{"lowercase pdf", "https://example.com/doc.pdf", true, true, 1},
+		{"pdf with fragment", "https://example.com/doc.pdf#page=2", true, true, 1},
+		{"non-pdf extension", "https://example.com/a.pdfx", true, true, 0},
+		{"no token still skips", "https://example.com/doc.pdf", false, true, 0},
+		{"remote pdf disabled by config", "https://example.com/doc.pdf", true, false, 0},
+		{"invalid url", "://bad", true, true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spy := &spyMineru{hasToken: tt.hasToken}
+			f := &Fetcher{engine: &stubEngine{}, mineru: spy, mineruRemotePDF: tt.mineruRemotePDF}
+			_, err := f.Fetch(context.Background(), tt.rawURL)
+			if err != nil {
+				t.Fatalf("Fetch failed: %v", err)
+			}
+			if spy.parseURLCalls != tt.wantParse {
+				t.Errorf("ParseURL calls = %d, want %d", spy.parseURLCalls, tt.wantParse)
+			}
+		})
+	}
+}
+
+func TestIsPDFURL(t *testing.T) {
+	tests := []struct {
+		rawURL string
+		want   bool
+	}{
+		{"https://example.com/a.pdf", true},
+		{"https://example.com/a.PDF", true},
+		{"https://example.com/a.Pdf?x=1", true},
+		{"https://example.com/a.pdf#frag", true},
+		{"https://example.com/a.html", false},
+		{"https://example.com/a.pdfx", false},
+		{"https://example.com/", false},
+		{"https://example.com", false},
+		{"://bad", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isPDFURL(tt.rawURL); got != tt.want {
+			t.Errorf("isPDFURL(%q) = %v, want %v", tt.rawURL, got, tt.want)
+		}
+	}
 }
 
 func TestFetchRuanyifengBlog(t *testing.T) {

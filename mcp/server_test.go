@@ -175,8 +175,8 @@ func TestNewMCPServer_RegisterTools(t *testing.T) {
 				webfetchInst = nil
 			},
 			conf: config.Config{
-				Bing:      config.BingConfig{Enabled: true},
-				Academic:  config.AcademicConfig{Enabled: true},
+				Bing:     config.BingConfig{Enabled: true},
+				Academic: config.AcademicConfig{Enabled: true},
 			},
 			want:    []string{"academicsearch", "smartsearch"},
 			wantNot: []string{"cleanfetch", "pdf_parser"},
@@ -384,7 +384,9 @@ func TestRunWithTransport_SearchError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	t1, t2 := mcp.NewInMemoryTransports()
-	go func() { _ = runWithTransport(ctx, config.Config{Bing: config.BingConfig{Enabled: true}}, t1, slog.New(slog.DiscardHandler)) }()
+	go func() {
+		_ = runWithTransport(ctx, config.Config{Bing: config.BingConfig{Enabled: true}}, t1, slog.New(slog.DiscardHandler))
+	}()
 
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0"}, nil).Connect(ctx, t2, nil)
 	if err != nil {
@@ -419,6 +421,63 @@ func TestRegisterRouter_MountsMCP(t *testing.T) {
 	if w.Code == http.StatusNotFound {
 		t.Fatal("/mcp was not registered")
 	}
+}
+
+func TestAuthMiddleware(t *testing.T) {
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	t.Run("no token configured -> pass through", func(t *testing.T) {
+		h := AuthMiddleware(config.Config{}, ok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("code = %d, want 200", w.Code)
+		}
+	})
+
+	t.Run("missing header -> 401", func(t *testing.T) {
+		h := AuthMiddleware(config.Config{AuthToken: "secret"}, ok)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("code = %d, want 401", w.Code)
+		}
+	})
+
+	t.Run("wrong token -> 401", func(t *testing.T) {
+		h := AuthMiddleware(config.Config{AuthToken: "secret"}, ok)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer wrong")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("code = %d, want 401", w.Code)
+		}
+	})
+
+	t.Run("Bearer token -> 200", func(t *testing.T) {
+		h := AuthMiddleware(config.Config{AuthToken: "secret"}, ok)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("code = %d, want 200", w.Code)
+		}
+	})
+
+	t.Run("X-API-Key -> 200", func(t *testing.T) {
+		h := AuthMiddleware(config.Config{AuthToken: "secret"}, ok)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-API-Key", "secret")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("code = %d, want 200", w.Code)
+		}
+	})
 }
 
 func toolText(t *testing.T, res *mcp.CallToolResult) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,11 +27,26 @@ type Result struct {
 	AgentHint  string
 }
 
+// fetchEngine 抽象 go-webfetch 抓取引擎，便于测试注入替身。
+type fetchEngine interface {
+	Fetch(ctx context.Context, rawURL string) (*webfetch.FetchResult, error)
+	ParsePDFFile(ctx context.Context, filePath string) (*webfetch.PDFResult, error)
+	Close() error
+}
+
+// mineruParser 抽象 MinerU 客户端，便于测试注入替身。
+type mineruParser interface {
+	HasToken() bool
+	ParseURL(ctx context.Context, fileURL string) (string, error)
+	ParseFile(ctx context.Context, filePath string) (string, error)
+}
+
 // Fetcher 封装 go-webfetch Engine。
 type Fetcher struct {
-	engine    *webfetch.Engine
-	mineru    *mineru.Client
-	mineruOCR bool // 本地 PDF 库读不到文本时是否回退 MinerU OCR
+	engine          fetchEngine
+	mineru          mineruParser
+	mineruOCR       bool // 本地 PDF 库读不到文本时是否回退 MinerU OCR
+	mineruRemotePDF bool // 远程 PDF URL 是否走 MinerU 精准 API（配置 pdf_parser.mineru_remote_pdf）
 }
 
 // NewFromConfig 根据配置创建 Fetcher。proxyURL 为代理地址，空字符串表示不使用代理（仍回退到环境变量）。
@@ -56,15 +72,15 @@ func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, p
 	}
 
 	engine, err := webfetch.New(webfetch.Config{
-		BlockPrivateIP:  true,
-		Timeout:         timeout,
-		MaxInlineLines:  maxInlineLines,
-		MaxInlineChars:  cfg.MaxInlineChars,
-		FileOutputDir:   outputDir,
-		FileTTL:         fileTTL,
-		ProxyURL:        proxyURL,
-		UseSystemProxy:  cfg.UseSystemProxy,
-		MaxRetries:      cfg.MaxRetries,
+		BlockPrivateIP: true,
+		Timeout:        timeout,
+		MaxInlineLines: maxInlineLines,
+		MaxInlineChars: cfg.MaxInlineChars,
+		FileOutputDir:  outputDir,
+		FileTTL:        fileTTL,
+		ProxyURL:       proxyURL,
+		UseSystemProxy: cfg.UseSystemProxy,
+		MaxRetries:     cfg.MaxRetries,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("webfetch engine init failed: %w", err)
@@ -72,7 +88,7 @@ func NewFromConfig(cfg config.CleanFetchConfig, pdfCfg config.PDFParserConfig, p
 
 	log.Infof("WebFetch 引擎已启用 (output_dir=%s, ttl=%s, max_inline_lines=%d, timeout=%s)", outputDir, fileTTL, maxInlineLines, timeout)
 
-	f := &Fetcher{engine: engine, mineruOCR: pdfCfg.MinerUOCREnabled()}
+	f := &Fetcher{engine: engine, mineruOCR: pdfCfg.MinerUOCREnabled(), mineruRemotePDF: pdfCfg.MinerURemotePDF}
 
 	// 初始化 MinerU 客户端（有 Token 或开启 OCR 回退时）
 	if pdfCfg.MinerUEnabled() {
@@ -109,8 +125,9 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Result, error) {
 		return f.parseLocalPDF(ctx, localPath)
 	}
 
-	// 远程 URL：有 Token 时优先尝试 MinerU 精准 API
-	if f.mineru != nil && f.mineru.HasToken() {
+	// 远程 URL：仅当配置开启且 URL 指向 PDF 文件、有 Token 时优先尝试 MinerU 精准 API
+	if f.mineru != nil && f.mineru.HasToken() && f.mineruRemotePDF && isPDFURL(rawURL) {
+		log.Infof("MinerU 精准 API 命中 PDF URL: %s", rawURL)
 		md, err := f.mineru.ParseURL(ctx, rawURL)
 		if err == nil {
 			return &Result{
@@ -134,6 +151,16 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Result, error) {
 		TotalChars: res.TotalChars,
 		AgentHint:  cleanAgentHint(res.AgentHint),
 	}, nil
+}
+
+// isPDFURL 判断远程 URL 是否指向 PDF 文件。
+// 仅按 URL path（忽略 query/fragment）的 .pdf 后缀判断，大小写不敏感。
+func isPDFURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(u.Path), ".pdf")
 }
 
 // parseLocalPDF 本地 PDF：优先 ledongthuc/pdf 文本提取；无文本且开启 mineru_ocr 时回退 MinerU。

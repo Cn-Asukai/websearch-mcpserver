@@ -47,14 +47,15 @@ type CleanFetchParams struct {
 }
 
 var (
-	searchapi          search.SearchInf
-	fallbackSearch     *search.BingSearchAdapter
-	summarizerInst     *summarizer.Summarizer
-	cacheInst          *cache.Cache
-	jinaInst           *jina.Reader
-	webfetchInst       *webfetch.Fetcher
-	academicSearcher   search.AcademicSearcher
-	smartSearchConf    config.SmartSearchConfig
+	searchapi           search.SearchInf
+	searchGroup         *search.SearchGroup
+	fallbackSearch      *search.BingSearchAdapter
+	summarizerInst      *summarizer.Summarizer
+	cacheInst           *cache.Cache
+	jinaInst            *jina.Reader
+	webfetchInst        *webfetch.Fetcher
+	academicSearcher    search.AcademicSearcher
+	smartSearchConf     config.SmartSearchConfig
 	cleanFetchMaxSizeMB int
 )
 
@@ -72,6 +73,11 @@ func Init(conf config.Config, opts ...ServerOption) error {
 
 func GetCache() *cache.Cache {
 	return cacheInst
+}
+
+// GetSearchGroup 返回搜索引擎组（供 server 包与 SearXNG 共用同一套引擎）。
+func GetSearchGroup() *search.SearchGroup {
+	return searchGroup
 }
 
 // GetWebFetch 返回 WebFetch 引擎实例（供 server 包关闭时清理）。
@@ -443,10 +449,14 @@ func postSearchFilter(results []search.SearchResult, engineName string) []search
 	// score 过滤
 	results = search.FilterByScore(results, ec.MinScore)
 
-	// 单引擎 maxsize 截断
+	// 单引擎 maxsize 截断：仅应用显式配置的 per-engine max_size。
+	// 未配置（MaxSize<=0）时不再回落默认 4 —— defaultEngineMaxSize 只属于 hybrid
+	// 编排层（pkg/search/hybrid.go）的 per-engine 缺省过滤；tool 层若也回落 4，
+	// 会覆盖 apipool / baidu_ai 等未在 smartsearch.engines 配置的引擎在
+	// factory.go 里 SetMaxSize 的全局截断。未配置时交给全局 max_size 或引擎自身截断。
 	engineMax := ec.MaxSize
 	if engineMax <= 0 {
-		engineMax = 4 // defaultEngineMaxSize
+		engineMax = 0
 	}
 	// 引擎不回传 score 时，取 min(engineMax, ceil(globalMax/1))
 	if smartSearchConf.MaxSize > 0 {

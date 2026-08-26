@@ -72,6 +72,8 @@
 | `semantic_scholar` | Semantic scholar (disabled by default) | Yes (auto-detected) |
 | `google_scholar` | All-discipline academic search (disabled by default) | Yes (auto-detected) |
 
+> **Network availability**: Google / DuckDuckGo / Crossref / Google Scholar are unstable under `network: china` without a proxy (may time out or be blocked by anti-bot measures); Bing web scraping may also time out. Failed engines are auto-skipped/fallback and do not affect other engines' results.
+
 ---
 
 ## Relevance Scoring

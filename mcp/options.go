@@ -46,6 +46,7 @@ func applySearchEngine(conf config.Config) {
 	if err != nil {
 		panic(fmt.Sprintf("搜索引擎初始化失败: %v", err))
 	}
+	searchGroup = g
 	searchapi = g.Primary
 	fallbackSearch = g.Fallback
 	academicSearcher = g.Academic

@@ -16,11 +16,11 @@ type keyState struct {
 
 // KeyPool 线程安全的 API Key 轮询池，支持失效标记与自动恢复。
 type KeyPool struct {
-	keys     []string
-	states   []keyState
-	idx      atomic.Uint64
-	lastKey  atomic.Value // 最近一次 Next() 返回的 key（string）
-	mu       sync.Mutex   // 保护 states
+	keys    []string
+	states  []keyState
+	idx     atomic.Uint64
+	lastKey atomic.Value // 最近一次 Next() 返回的 key（string）
+	mu      sync.Mutex   // 保护 states
 }
 
 // NewKeyPool 创建 KeyPool，keys 必须非空。
@@ -87,6 +87,8 @@ func (p *KeyPool) MarkInvalid(key string) {
 }
 
 // MarkLastInvalid 标记 Next() 最近返回的 key 失效 30 分钟。
+// 注意：非并发安全（lastKey 是池级状态，并发 Next 会标错 key），新代码勿用；
+// 请改用 MarkInvalid(key) 配合 KeyError 精确标记本次实际使用的 key。
 func (p *KeyPool) MarkLastInvalid() {
 	v := p.lastKey.Load()
 	if v == nil {
