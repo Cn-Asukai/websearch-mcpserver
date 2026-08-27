@@ -47,7 +47,7 @@ So I started in 2026-04 with a single Baidu Qianfan engine and evolved it into a
 
 **Decoupled and composable** — Engines, modes, and tools are not coupled: `mode` decides the engine group, the 4 tools each have their own `enabled` switch, keys are optional (`sk_list` multi-key rotation). Everything is config-driven (per-engine filtering, scoring thresholds, MMR, blocked sites, rate limits) — all tunable, nothing hardcoded.
 
-**A complete tool chain for LLMs** — The 4 tools cover the full web workflow: `smartsearch` search → `cleanfetch` fetch the source → `pdf_parser` parse PDFs → LLM summary refinement, with results feeding into each other — one config enables the whole chain.
+**A complete tool chain for LLMs** — The 4 tools cover the full web workflow: `smartsearch` search (optional LLM structured summary) → `academicsearch` academic search → `cleanfetch` fetch the source → `pdf_parser` parse PDFs, with results feeding into each other — one config enables the whole chain.
 
 **Scenario-specific optimization** — Optimized for real usage scenarios: academic search (6 engines + citation / journal / PDF scoring), China networking (direct connect + system proxy auto-detection), scanned PDFs (MinerU OCR fallback), recency queries (`time_range`).
 
@@ -56,19 +56,17 @@ So I started in 2026-04 with a single Baidu Qianfan engine and evolved it into a
 ```bash
 # 1. Download a binary: https://github.com/daidaiJ/websearch-mcpserver/releases
 # 2. Start (no hand-written config, no API keys)
-#    The first `start` auto-generates an editable preset config.yaml next to the executable
+#    Windows auto-start on boot (optional)
+./websearch-mcpserver.exe install
+#
+#    The first `install` writes an editable preset config.yaml and autostart.vbs next to the executable
 ./websearch-mcpserver start
+#    Or double-click
+autostart.vbs
 # 3. Register with your MCP client (see docs/installation.md)
 ```
 
 > "Zero config" = the first start writes a preset `config.yaml` identical to `config.example.yaml`; edit that file for port/keys/mode. The daemon listens on `127.0.0.1` by default; when opening the network (`host: 0.0.0.0`), configure `auth_token` to protect business endpoints.
-
-**Auto-start (optional)**:
-
-```bash
-# Windows auto-start on boot
-./websearch-mcpserver.exe install
-```
 
 Or use MCP Hooks for session auto start/stop (Qwen Code example; full details in [docs/installation.md](docs/installation.md)):
 

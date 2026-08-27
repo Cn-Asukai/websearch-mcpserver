@@ -32,7 +32,8 @@
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │  pkg/search 搜索引擎组（按 mode 构建）                       │
-│  ├─ 通用引擎：baidu / bing / ddg / google / tavily / exa    │
+│  ├─ 通用引擎：baidu / baidu_api / bing / ddg / google /     │
+│  │            tavily / exa                                  │
 │  ├─ 学术引擎：arxiv / crossref / openalex / pubmed /        │
 │  │            semantic_scholar / google_scholar             │
 │  └─ 评分管线：RRF 融合 → 词汇对齐 → 域名品质 → Boost →      │

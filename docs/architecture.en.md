@@ -33,8 +33,8 @@
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │  pkg/search engine group (built by mode)                    │
-│  ├─ General engines: baidu / bing / ddg / google / tavily / │
-│  │                    exa                                   │
+│  ├─ General engines: baidu / baidu_api / bing / ddg /       │
+│  │                    google / tavily / exa                 │
 │  ├─ Academic engines: arxiv / crossref / openalex / pubmed /│
 │  │                     semantic_scholar / google_scholar    │
 │  └─ Scoring pipeline: RRF fusion → lexical alignment →      │

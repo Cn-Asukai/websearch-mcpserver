@@ -47,7 +47,7 @@ LLM 需要联网搜索，但现成的 MCP 搜索方案不能满足我的偏好�
 
 **解耦可组合** — 引擎、模式、工具互不耦合：`mode` 决定引擎组，4 个工具各自 `enabled` 开关，Key 可选（`sk_list` 多 Key 轮询）。配置驱动一切（per-engine 过滤、评分阈值、MMR、屏蔽站点、限流），全部可调，不写死。
 
-**面向 LLM 的完整工具链** — 4 个工具覆盖联网工作流：`smartsearch` 搜索 → `cleanfetch` 抓取原文 → `pdf_parser` 解析 PDF → LLM 摘要精炼，结果互相衔接，一次配置全链路可用。
+**面向 LLM 的完整工具链** — 4 个工具覆盖联网工作流：`smartsearch` 搜索（可选 LLM 结构化摘要）→ `academicsearch` 学术检索 → `cleanfetch` 抓取原文 → `pdf_parser` 解析 PDF，结果互相衔接，一次配置全链路可用。
 
 **场景化优化** — 针对真实使用场景：学术搜索（6 引擎 + 引用 / 期刊 / PDF 评分）、国内网络（直连 + 系统代理自动检测）、扫描件 PDF（MinerU OCR 回退）、时效性查询（`time_range`）。
 
@@ -56,19 +56,19 @@ LLM 需要联网搜索，但现成的 MCP 搜索方案不能满足我的偏好�
 ```bash
 # 1. 下载二进制: https://github.com/daidaiJ/websearch-mcpserver/releases
 # 2. 启动（无需手写配置，无需 API Key）
-#    首次 start 会在可执行文件目录自动生成一份可编辑的预设 config.yaml
+# Windows 开机自启动 可选
+./websearch-mcpserver.exe install
+# 
+#    首次 install 会在可执行文件目录自动生成一份可编辑的预设 config.yaml 和autostart.vbs
 ./websearch-mcpserver start
+#或者 点击
+autostart.vbs
 # 3. 注册到 MCP 客户端（见 docs/installation.md）
 ```
 
 > 「零配置」= 首次启动自动生成与 `config.example.yaml` 相同的预设 `config.yaml`，改端口 / Key / 模式都改这一份文件。默认只监听 `127.0.0.1`；开放网卡（`host: 0.0.0.0`）时建议配置 `auth_token` 保护业务端点。
 
-**自启动（可选）**：
 
-```bash
-# Windows 开机自启动
-./websearch-mcpserver.exe install
-```
 
 或通过 MCP Hooks 实现会话自动启停（Qwen Code 示例，完整说明见 [docs/installation.md](docs/installation.md)）：
 
