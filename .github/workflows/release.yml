@@ -199,9 +199,24 @@ jobs:
             --version "$VERSION" \
             --repo-url https://github.com/daidaiJ/websearch-mcpserver \
             --base-tag "$BASE_TAG" \
+            --expect-packages 6 \
             --out server.json
           echo "--- server.json ---"
           cat server.json
 
+      - name: Validate server.json
+        run: ./mcp-publisher validate
+
       - name: Publish server to MCP Registry
-        run: ./mcp-publisher publish
+        run: ./mcp-publisher publish
+
+      - name: Verify registration
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG%-registry}"
+          VERSION="${VERSION#v}"
+          curl -s "https://registry.modelcontextprotocol.io/v0.1/servers?search=websearch-mcpserver" \
+            | jq -e --arg v "$VERSION" \
+              '.servers[] | select(.server.name == "io.github.daidaiJ/websearch-mcpserver" and .server.version == $v)' \
+            > /dev/null
+          echo "✅ registered: io.github.daidaiJ/websearch-mcpserver $VERSION"

@@ -193,6 +193,20 @@ func packBundle(binaryPath, bundlePath string, m manifest) error {
 		return err
 	}
 
+	// Self-check: the bundle must be a readable zip with the expected entries.
+	zr, err := zip.OpenReader(bundlePath)
+	if err != nil {
+		return fmt.Errorf("bundle is not a valid zip: %w", err)
+	}
+	entries := map[string]bool{}
+	for _, zf := range zr.File {
+		entries[zf.Name] = true
+	}
+	zr.Close()
+	if !entries["manifest.json"] || !entries[m.Server.EntryPoint] {
+		return fmt.Errorf("bundle missing expected entries (manifest.json, %s)", m.Server.EntryPoint)
+	}
+
 	sum, err := sha256File(bundlePath)
 	if err != nil {
 		return err
@@ -237,14 +251,15 @@ type transport struct {
 func runServerJSON(args []string) error {
 	fs := flag.NewFlagSet("serverjson", flag.ExitOnError)
 	var (
-		dir         string
-		name        string
-		title       string
-		description string
-		version     string
-		repoURL     string
-		baseTag     string
-		out         string
+		dir            string
+		name           string
+		title          string
+		description    string
+		version        string
+		repoURL        string
+		baseTag        string
+		out            string
+		expectPackages int
 	)
 	fs.StringVar(&dir, "dir", ".", "directory containing *.mcpb and *.mcpb.sha256")
 	fs.StringVar(&name, "name", "", "registry name, e.g. io.github.<owner>/<repo>")
@@ -254,6 +269,7 @@ func runServerJSON(args []string) error {
 	fs.StringVar(&repoURL, "repo-url", "", "repository URL, e.g. https://github.com/<owner>/<repo>")
 	fs.StringVar(&baseTag, "base-tag", "", "release tag the .mcpb assets were uploaded to, e.g. v1.0.0")
 	fs.StringVar(&out, "out", "", "output file (default: stdout)")
+	fs.IntVar(&expectPackages, "expect-packages", 0, "expected number of packages (fails if mismatch, 0 = skip)")
 	fs.Parse(args)
 
 	if name == "" || description == "" || version == "" || repoURL == "" || baseTag == "" {
@@ -269,6 +285,9 @@ func runServerJSON(args []string) error {
 	}
 	if len(matches) == 0 {
 		return fmt.Errorf("no *.mcpb files found in %s", dir)
+	}
+	if expectPackages > 0 && len(matches) != expectPackages {
+		return fmt.Errorf("found %d .mcpb bundles, expected %d (a platform is missing)", len(matches), expectPackages)
 	}
 	sort.Strings(matches)
 

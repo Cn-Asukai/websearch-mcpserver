@@ -14,6 +14,8 @@
 - 服务器名：`io.github.daidaiJ/websearch-mcpserver`（GitHub 账号 daidaiJ）
 - 包类型：`mcpb`（MCP Bundle = zip + manifest.json，`server.type: "binary"`），6 平台各一个包条目
 - 打包与 server.json 生成由 `cmd/mcpb` Go CLI 完成（`mcpb pack` / `mcpb serverjson`），替代 shell/jq 避免转义脆弱性；workflow 中 `go run ./cmd/mcpb` 调用
+- CLI 稳定性强化：`pack` 自带 zip 完整性自检；`serverjson` 支持 `--expect-packages 6` 防平台缺失、description >100 字符本地报错
+- publish-registry job 闭环：publish 前 `mcp-publisher validate`（失败即停）+ publish 后 curl 自验证注册（jq 断言 name+version）
 - description 硬限制 ≤100 字符（registry API 422 拒绝）
 - 本地手动发布（备用）：安装 `mcp-publisher`（GitHub releases 下载）→ `mcp-publisher login github`（设备码）→ `mcp-publisher publish`
 
