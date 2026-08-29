@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ !endsWith(github.ref_name, '-registry') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -18,18 +19,22 @@ jobs:
             goarch: amd64
             name: websearch-mcpserver-linux-amd64
             cli_name: websearch-mcp-cli-linux-amd64
+            mcpb_os: linux
           - goos: windows
             goarch: amd64
             name: websearch-mcpserver-windows-amd64.exe
             cli_name: websearch-mcp-cli-windows-amd64.exe
+            mcpb_os: windows
           - goos: darwin
             goarch: amd64
             name: websearch-mcpserver-darwin-amd64
             cli_name: websearch-mcp-cli-darwin-amd64
+            mcpb_os: darwin
           - goos: darwin
             goarch: arm64
             name: websearch-mcpserver-darwin-arm64
             cli_name: websearch-mcp-cli-darwin-arm64
+            mcpb_os: darwin
 
     steps:
       - name: Checkout
@@ -52,6 +57,19 @@ jobs:
           go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.name }} ./cmd/
           go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.cli_name }} ./cmd/cli
 
+      - name: Package MCPB bundle
+        run: |
+          go run ./cmd/mcpb pack \
+            --binary "${{ matrix.name }}" \
+            --name websearch-mcpserver \
+            --display "WebSearch MCP Server" \
+            --version "${{ github.ref_name }}" \
+            --description "Zero-API-key MCP search server: multi-engine web/academic search, PDF parsing, secure web fetch" \
+            --author daidaiJ \
+            --os "${{ matrix.mcpb_os }}" \
+            --arch "${{ matrix.goarch }}" \
+            --out .
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -59,9 +77,12 @@ jobs:
           path: |
             ${{ matrix.name }}
             ${{ matrix.cli_name }}
+            ${{ matrix.name }}.mcpb
+            ${{ matrix.name }}.mcpb.sha256
 
   release:
     needs: build
+    if: ${{ !endsWith(github.ref_name, '-registry') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -85,33 +106,66 @@ jobs:
 
       - name: Generate SHA256 checksums
         run: |
-          sha256sum bins/websearch-mcpserver-linux-amd64 > bins/websearch-mcpserver-linux-amd64.sha256
-          sha256sum bins/websearch-mcpserver-windows-amd64.exe > bins/websearch-mcpserver-windows-amd64.exe.sha256
-          sha256sum bins/websearch-mcpserver-darwin-amd64 > bins/websearch-mcpserver-darwin-amd64.sha256
-          sha256sum bins/websearch-mcpserver-darwin-arm64 > bins/websearch-mcpserver-darwin-arm64.sha256
-          sha256sum bins/websearch-mcp-cli-linux-amd64 > bins/websearch-mcp-cli-linux-amd64.sha256
-          sha256sum bins/websearch-mcp-cli-windows-amd64.exe > bins/websearch-mcp-cli-windows-amd64.exe.sha256
-          sha256sum bins/websearch-mcp-cli-darwin-amd64 > bins/websearch-mcp-cli-darwin-amd64.sha256
-          sha256sum bins/websearch-mcp-cli-darwin-arm64 > bins/websearch-mcp-cli-darwin-arm64.sha256
+          cd bins
+          for f in *; do
+            case "$f" in *.sha256) continue ;; esac
+            [ -f "$f" ] || continue
+            sha256sum "$f" > "$f.sha256"
+          done
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.commit.outputs.msg }}
-          files: |
-            bins/websearch-mcpserver-linux-amd64
-            bins/websearch-mcpserver-linux-amd64.sha256
-            bins/websearch-mcpserver-windows-amd64.exe
-            bins/websearch-mcpserver-windows-amd64.exe.sha256
-            bins/websearch-mcpserver-darwin-amd64
-            bins/websearch-mcpserver-darwin-amd64.sha256
-            bins/websearch-mcpserver-darwin-arm64
-            bins/websearch-mcpserver-darwin-arm64.sha256
-            bins/websearch-mcp-cli-linux-amd64
-            bins/websearch-mcp-cli-linux-amd64.sha256
-            bins/websearch-mcp-cli-windows-amd64.exe
-            bins/websearch-mcp-cli-windows-amd64.exe.sha256
-            bins/websearch-mcp-cli-darwin-amd64
-            bins/websearch-mcp-cli-darwin-amd64.sha256
-            bins/websearch-mcp-cli-darwin-arm64
-            bins/websearch-mcp-cli-darwin-arm64.sha256
+          files: bins/*
+
+  publish-registry:
+    name: Publish to MCP Registry
+    if: ${{ endsWith(github.ref_name, '-registry') }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC 认证必需
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download MCPB bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"          # v1.0.0-registry
+          BASE_TAG="${TAG%-registry}"             # v1.0.0
+          mkdir -p mcpb-assets
+          gh release download "$BASE_TAG" --pattern "*.mcpb" --pattern "*.mcpb.sha256" --dir mcpb-assets
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Generate server.json
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          BASE_TAG="${TAG%-registry}"
+          VERSION="${BASE_TAG#v}"
+          go run ./cmd/mcpb serverjson \
+            --dir mcpb-assets \
+            --name io.github.daidaiJ/websearch-mcpserver \
+            --title "WebSearch MCP Server" \
+            --description "Zero-API-key MCP search server: multi-engine web/academic search, PDF parsing, secure web fetch" \
+            --version "$VERSION" \
+            --repo-url https://github.com/daidaiJ/websearch-mcpserver \
+            --base-tag "$BASE_TAG" \
+            --out server.json
+          cat server.json
+
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish
