@@ -1,41 +1,54 @@
+# Release workflow — 参考 2native-ssh-mcp 已验证实现（v1.4.1 成功发布）。
+#
+# Trigger: push an annotated tag (git tag -a v3.1.1 -m "...")
+#   - builds server + cli binaries for windows/linux/darwin x amd64/arm64 (CGO_ENABLED=0)
+#   - injects the tag name as the binary version (-X main.version=<tag>)
+#   - release notes = the annotated tag message (read via GitHub API)
+#   - attaches every binary with its own .sha256 checksum
+#   - packages the server binary as an .mcpb bundle (MCP Bundle, zip + manifest.json)
+#     via cmd/mcpb CLI (mcpb pack)
+#   - a tag with the "-registry" suffix (e.g. v3.1.1-registry) additionally
+#     publishes the matching stable release (v3.1.1) to the official MCP
+#     Registry (registry.modelcontextprotocol.io) via OIDC. Publishing to the
+#     registry is explicit: plain tags (v3.1.1) only build the release.
+
 name: Release
 
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
   build:
+    name: Build ${{ matrix.goos }}-${{ matrix.arch }}
     if: ${{ !endsWith(github.ref_name, '-registry') }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - goos: linux
-            goarch: amd64
-            name: websearch-mcpserver-linux-amd64
-            cli_name: websearch-mcp-cli-linux-amd64
-            mcpb_os: linux
           - goos: windows
-            goarch: amd64
-            name: websearch-mcpserver-windows-amd64.exe
-            cli_name: websearch-mcp-cli-windows-amd64.exe
-            mcpb_os: windows
+            arch: amd64
+            ext: .exe
+          - goos: windows
+            arch: arm64
+            ext: .exe
+          - goos: linux
+            arch: amd64
+            ext: ''
+          - goos: linux
+            arch: arm64
+            ext: ''
           - goos: darwin
-            goarch: amd64
-            name: websearch-mcpserver-darwin-amd64
-            cli_name: websearch-mcp-cli-darwin-amd64
-            mcpb_os: darwin
+            arch: amd64
+            ext: ''
           - goos: darwin
-            goarch: arm64
-            name: websearch-mcpserver-darwin-arm64
-            cli_name: websearch-mcp-cli-darwin-arm64
-            mcpb_os: darwin
-
+            arch: arm64
+            ext: ''
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,81 +63,100 @@ jobs:
 
       - name: Build
         env:
-          CGO_ENABLED: "0"
+          CGO_ENABLED: '0'
           GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          GOARCH: ${{ matrix.arch }}
         run: |
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.name }} ./cmd/
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o ${{ matrix.cli_name }} ./cmd/cli
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -o dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/
+          go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -o dist/websearch-mcp-cli-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/cli
 
       - name: Package MCPB bundle
         run: |
           go run ./cmd/mcpb pack \
-            --binary "${{ matrix.name }}" \
+            --binary "dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}" \
             --name websearch-mcpserver \
             --display "WebSearch MCP Server" \
             --version "${{ github.ref_name }}" \
             --description "Zero-API-key MCP search server: multi-engine web/academic search, PDF parsing, secure web fetch" \
             --author daidaiJ \
-            --os "${{ matrix.mcpb_os }}" \
-            --arch "${{ matrix.goarch }}" \
-            --out .
+            --os "${{ matrix.goos }}" \
+            --arch "${{ matrix.arch }}" \
+            --out dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bins-${{ matrix.name }}
+          name: websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}
           path: |
-            ${{ matrix.name }}
-            ${{ matrix.cli_name }}
-            ${{ matrix.name }}.mcpb
-            ${{ matrix.name }}.mcpb.sha256
+            dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}
+            dist/websearch-mcp-cli-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}
+            dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}.mcpb
+            dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}.mcpb.sha256
+          if-no-files-found: error
 
   release:
+    name: Create release
     needs: build
     if: ${{ !endsWith(github.ref_name, '-registry') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: Get commit message
-        id: commit
+      # Release notes come from the annotated tag message, read via the
+      # GitHub API. The local checkout may only hold a lightweight tag ref,
+      # whose %(contents) falls back to the commit message, so local git
+      # cannot be trusted here.
+      - name: Read tag message
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "msg<<EOF" >> "$GITHUB_OUTPUT"
-          git log -1 --format=%B >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          REF="$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/${{ github.ref_name }}")"
+          TYPE="$(echo "$REF" | jq -r '.object.type')"
+          if [ "$TYPE" = "tag" ]; then
+            SHA="$(echo "$REF" | jq -r '.object.sha')"
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$SHA" --jq '.message' > notes.md
+          else
+            echo "${{ github.ref_name }}" > notes.md
+          fi
 
-      - name: Download all artifacts
+      - name: Download binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: bins-*
-          path: bins
+          path: dist
           merge-multiple: true
 
-      - name: Generate SHA256 checksums
+      - name: Generate checksums
         run: |
-          cd bins
-          for f in *; do
-            case "$f" in *.sha256) continue ;; esac
+          cd dist
+          for f in websearch-mcpserver-* websearch-mcp-cli-*; do
             [ -f "$f" ] || continue
+            case "$f" in *.sha256) continue ;; esac
             sha256sum "$f" > "$f.sha256"
           done
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: ${{ steps.commit.outputs.msg }}
-          files: bins/*
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ github.ref_name }}" --yes || true
+          gh release create "${{ github.ref_name }}" \
+            dist/websearch-mcpserver-* dist/websearch-mcp-cli-* \
+            --title "${{ github.ref_name }}" \
+            --notes-file notes.md
 
   publish-registry:
     name: Publish to MCP Registry
+    # Triggered only by a "-registry" suffix tag (e.g. v3.1.1-registry).
+    # Publishes the matching stable release (v3.1.1) to the official registry.
     if: ${{ endsWith(github.ref_name, '-registry') }}
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # OIDC 认证必需
+      id-token: write
       contents: read
     steps:
       - name: Checkout
@@ -139,10 +171,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"          # v1.0.0-registry
-          BASE_TAG="${TAG%-registry}"             # v1.0.0
+          TAG="${GITHUB_REF#refs/tags/}"          # v3.1.1-registry
+          BASE_TAG="${TAG%-registry}"             # v3.1.1
+          echo "Publishing $BASE_TAG to MCP Registry"
           mkdir -p mcpb-assets
-          gh release download "$BASE_TAG" --pattern "*.mcpb" --pattern "*.mcpb.sha256" --dir mcpb-assets
+          gh release download "$BASE_TAG" \
+            --pattern "*.mcpb" --pattern "*.mcpb.sha256" \
+            --dir mcpb-assets
 
       - name: Install mcp-publisher
         run: |
@@ -153,9 +188,9 @@ jobs:
 
       - name: Generate server.json
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          BASE_TAG="${TAG%-registry}"
-          VERSION="${BASE_TAG#v}"
+          TAG="${GITHUB_REF#refs/tags/}"          # v3.1.1-registry
+          BASE_TAG="${TAG%-registry}"             # v3.1.1
+          VERSION="${BASE_TAG#v}"                 # 3.1.1
           go run ./cmd/mcpb serverjson \
             --dir mcpb-assets \
             --name io.github.daidaiJ/websearch-mcpserver \
@@ -165,6 +200,7 @@ jobs:
             --repo-url https://github.com/daidaiJ/websearch-mcpserver \
             --base-tag "$BASE_TAG" \
             --out server.json
+          echo "--- server.json ---"
           cat server.json
 
       - name: Publish server to MCP Registry
