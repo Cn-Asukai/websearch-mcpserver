@@ -75,7 +75,8 @@ jobs:
 
       - name: Package MCPB bundle
         run: |
-          go run ./cmd/mcpb pack \
+          go install github.com/daidaiJ/mcpb-tool-cli@latest
+          mcpb pack \
             --binary "dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}" \
             --name websearch-mcpserver \
             --display "WebSearch MCP Server" \
@@ -191,7 +192,8 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"          # v3.1.1-registry
           BASE_TAG="${TAG%-registry}"             # v3.1.1
           VERSION="${BASE_TAG#v}"                 # 3.1.1
-          go run ./cmd/mcpb serverjson \
+          go install github.com/daidaiJ/mcpb-tool-cli@latest
+          mcpb serverjson \
             --dir mcpb-assets \
             --name io.github.daidaiJ/websearch-mcpserver \
             --title "WebSearch MCP Server" \
@@ -219,4 +221,4 @@ jobs:
             | jq -e --arg v "$VERSION" \
               '.servers[] | select(.server.name == "io.github.daidaiJ/websearch-mcpserver" and .server.version == $v)' \
             > /dev/null
-          echo "✅ registered: io.github.daidaiJ/websearch-mcpserver $VERSION"
+          echo "✅ registered: io.github.daidaiJ/websearch-mcpserver $VERSION"
