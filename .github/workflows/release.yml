@@ -5,12 +5,12 @@
 #   - injects the tag name as the binary version (-X main.version=<tag>)
 #   - release notes = the annotated tag message (read via GitHub API)
 #   - attaches every binary with its own .sha256 checksum
-#   - packages the server binary as an .mcpb bundle (MCP Bundle, zip + manifest.json)
-#     via cmd/mcpb CLI (mcpb pack)
-#   - a tag with the "-registry" suffix (e.g. v3.1.1-registry) additionally
-#     publishes the matching stable release (v3.1.1) to the official MCP
-#     Registry (registry.modelcontextprotocol.io) via OIDC. Publishing to the
-#     registry is explicit: plain tags (v3.1.1) only build the release.
+#   - plain tags (v3.1.1) only build the release: no MCPB packaging, no CLI download
+#   - a tag with the "-registry" suffix (e.g. v3.1.1-registry) additionally:
+#     downloads the base release binaries, packages them as .mcpb bundles
+#     (MCP Bundle, zip + manifest.json) via mcpb-tool-cli, uploads the bundles
+#     back to the base release, and publishes it to the official MCP Registry
+#     (registry.modelcontextprotocol.io) via OIDC.
 
 name: Release
 
@@ -73,21 +73,6 @@ jobs:
           go build -trimpath -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o dist/websearch-mcp-cli-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/cli
 
-      - name: Package MCPB bundle
-        run: |
-          go install github.com/daidaiJ/mcpb-tool-cli@latest
-          # go install 产物在 GOPATH/bin（不在 runner PATH），且二进制名为 mcpb-tool-cli
-          "$(go env GOPATH)/bin/mcpb-tool-cli" pack \
-            --binary "dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}" \
-            --name websearch-mcpserver \
-            --display "WebSearch MCP Server" \
-            --version "${{ github.ref_name }}" \
-            --description "Zero-API-key MCP search server: multi-engine web/academic search, PDF parsing, secure web fetch" \
-            --author daidaiJ \
-            --os "${{ matrix.goos }}" \
-            --arch "${{ matrix.arch }}" \
-            --out dist
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -95,8 +80,6 @@ jobs:
           path: |
             dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}
             dist/websearch-mcp-cli-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}
-            dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}.mcpb
-            dist/websearch-mcpserver-${{ matrix.goos }}-${{ matrix.arch }}.mcpb.sha256
           if-no-files-found: error
 
   release:
@@ -159,7 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
+      contents: write   # gh release upload 回传 .mcpb 到 base release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,17 +152,47 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Download MCPB bundles
+      # MCPB 封包只发生在 -registry 流程：从 base release 拉服务端二进制，
+      # 现场打包 .mcpb 后回传到 base release（server.json 的下载链接指向那里）
+      - name: Package MCPB bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"          # v3.1.1-registry
           BASE_TAG="${TAG%-registry}"             # v3.1.1
-          echo "Publishing $BASE_TAG to MCP Registry"
-          mkdir -p mcpb-assets
+          echo "Packaging MCPB bundles for $BASE_TAG"
+          mkdir -p dist mcpb-assets
           gh release download "$BASE_TAG" \
-            --pattern "*.mcpb" --pattern "*.mcpb.sha256" \
-            --dir mcpb-assets
+            --pattern "websearch-mcpserver-*" --dir dist
+
+          go install github.com/daidaiJ/mcpb-tool-cli@latest
+          # go install 产物在 GOPATH/bin（不在 runner PATH），且二进制名为 mcpb-tool-cli
+          MCPB="$(go env GOPATH)/bin/mcpb-tool-cli"
+          for os in linux darwin windows; do
+            for arch in amd64 arm64; do
+              ext=""; [ "$os" = "windows" ] && ext=".exe"
+              "$MCPB" pack \
+                --binary "dist/websearch-mcpserver-$os-$arch$ext" \
+                --name websearch-mcpserver \
+                --display "WebSearch MCP Server" \
+                --version "$BASE_TAG" \
+                --description "Zero-API-key MCP search server: multi-engine web/academic search, PDF parsing, secure web fetch" \
+                --author daidaiJ \
+                --os "$os" \
+                --arch "$arch" \
+                --out mcpb-assets
+            done
+          done
+          ls -la mcpb-assets
+
+      - name: Upload MCPB bundles to base release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          BASE_TAG="${TAG%-registry}"
+          gh release upload "$BASE_TAG" \
+            mcpb-assets/*.mcpb mcpb-assets/*.mcpb.sha256 --clobber
 
       - name: Install mcp-publisher
         run: |
