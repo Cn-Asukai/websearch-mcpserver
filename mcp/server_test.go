@@ -60,15 +60,15 @@ type mockAcademic struct {
 }
 
 func (m *mockAcademic) AcademicEngines() []string { return m.engines }
-func (m *mockAcademic) SearchAcademicRaw(query string, opts ...search.AcademicSearchOptions) ([]search.SearchResult, error) {
+func (m *mockAcademic) SearchAcademicRaw(query string, opts ...search.AcademicSearchOptions) (search.AcademicSearchResult, error) {
 	m.lastQ = query
 	if len(opts) > 0 {
 		m.lastOpt = opts[0]
 	}
 	if m.err != nil {
-		return nil, m.err
+		return search.AcademicSearchResult{}, m.err
 	}
-	return m.results, nil
+	return search.AcademicSearchResult{Results: m.results}, nil
 }
 
 func initTestLogger() {

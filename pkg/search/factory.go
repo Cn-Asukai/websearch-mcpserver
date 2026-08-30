@@ -371,13 +371,20 @@ func initAcademicEngine(conf config.Config, g *SearchGroup) {
 	}
 
 	acadConf := AcademicConfig{
-		Network:         network,
-		Arxiv:           antirobot.ArxivOpts{Enabled: !acad.DisableArxiv},
+		Network: network,
+		Arxiv: antirobot.ArxivOpts{
+			Enabled: !acad.DisableArxiv,
+			PerSec:  conf.GetRateLimitPerSec(),
+			PerMin:  conf.GetRateLimitPerMin(),
+		},
 		Crossref:        antirobot.CrossrefOpts{Enabled: !acad.DisableCrossref},
 		OpenAlex:        antirobot.OpenAlexOpts{Enabled: !acad.DisableOpenAlex},
-		SemanticScholar: antirobot.SemanticScholarOpts{Enabled: !acad.DisableSemanticScholar},
+		SemanticScholar: antirobot.SemanticScholarOpts{Enabled: !acad.DisableSemanticScholar, APIKey: acad.SemanticScholarAPIKey},
 		PubMed:          antirobot.PubMedOpts{Enabled: !acad.DisablePubMed},
 		GoogleScholar:   antirobot.GoogleScholarOpts{Enabled: !acad.DisableGoogleScholar},
+		EuropePMC:       antirobot.EuropePMCOpts{Enabled: !acad.DisableEuropePMC},
+		DBLP:            antirobot.DBLPOpts{Enabled: !acad.DisableDBLP},
+		DOAJ:            antirobot.DOAJOpts{Enabled: !acad.DisableDOAJ},
 		ProxyResolve:    conf.Proxy.ProxyResolver(),
 	}
 

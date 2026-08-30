@@ -159,6 +159,66 @@ func TestEnhanceAcademicScoreOrder(t *testing.T) {
 	}
 }
 
+// TestEnhanceAcademicDOIMerge 同 DOI 不同 URL 的跨源结果应按 DOI 合并为一条，
+// 元数据择优（CitedBy 取较大值），Engines 记录两个来源。
+func TestEnhanceAcademicDOIMerge(t *testing.T) {
+	buckets := []scoreBucket{
+		{name: "openalex", results: []SearchResult{
+			{Title: "Attention Is All You Need", Url: "https://openalex.org/W1",
+				Content: "openalex abstract", DOI: "10.48550/arXiv.1706.03762", CitedBy: 90000},
+		}},
+		{name: "crossref", results: []SearchResult{
+			{Title: "Attention Is All You Need", Url: "https://doi.org/10.48550/arxiv.1706.03762",
+				Content: "crossref abstract longer content here", DOI: "https://DOI.org/10.48550/arXiv.1706.03762", CitedBy: 95000},
+			{Title: "Unrelated No-DOI", Url: "https://example.com/x", Content: "no doi here"},
+		}},
+	}
+	got := EnhanceAcademicResults("attention mechanism", buckets, 0.001, 10)
+
+	// 同 DOI（大小写/前缀差异归一后相同）+ 无 DOI 的独立条目 = 2 条
+	if len(got) != 2 {
+		t.Fatalf("同 DOI 应合并为 1 条 + 无 DOI 独立 1 条, got %d: %+v", len(got), urlsOf(got))
+	}
+	var merged *SearchResult
+	for i := range got {
+		if got[i].DOI != "" {
+			merged = &got[i]
+		}
+	}
+	if merged == nil {
+		t.Fatal("应存在合并后的 DOI 结果")
+	}
+	if len(merged.Engines) != 2 {
+		t.Errorf("合并结果应记录 2 个引擎, got %v", merged.Engines)
+	}
+	if merged.CitedBy != 95000 {
+		t.Errorf("CitedBy 应取较大值 95000, got %d", merged.CitedBy)
+	}
+	if merged.Content != "crossref abstract longer content here" {
+		t.Errorf("合并应保留更长的摘要, got %q", merged.Content)
+	}
+}
+
+// TestEnhanceAcademicNoDOIURLKey 无 DOI 结果行为与现状一致（URL 键去重）。
+func TestEnhanceAcademicNoDOIURLKey(t *testing.T) {
+	buckets := []scoreBucket{
+		{name: "a", results: []SearchResult{
+			{Title: "X", Url: "https://example.com/paper", Content: "x"},
+		}},
+		{name: "b", results: []SearchResult{
+			// URL 归一化后相同（末尾斜杠差异）→ 合并
+			{Title: "X", Url: "https://example.com/paper/", Content: "x longer content"},
+		}},
+	}
+	got := EnhanceAcademicResults("topic", buckets, 0.0, 10)
+	if len(got) != 1 {
+		t.Fatalf("同 URL 应合并为 1 条, got %d", len(got))
+	}
+	if len(got[0].Engines) != 2 {
+		t.Errorf("应记录 2 个引擎, got %v", got[0].Engines)
+	}
+}
+
 // TestApplyAcademicScoreFloorPerEngineTop 每引擎保底：引擎内第一名低于阀值也保留。
 func TestApplyAcademicScoreFloorPerEngineTop(t *testing.T) {
 	scored := []SearchResult{

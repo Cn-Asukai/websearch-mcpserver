@@ -2,6 +2,26 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v3.2.0 — 2026-08-30
+
+### 新增
+- **学术搜索扩展至 9 引擎**：新增 Europe PMC（生物医学 / PubMed 增补源）、DBLP（CS 会议/期刊索引）、DOAJ（开放获取期刊），国内均可直连；`academicsearch` 工具描述与引擎选择建议同步
+- **逐引擎错误透传**：部分学术引擎失败不再静默吞掉——失败引擎记入 `EngineErrors`，结果末尾提示「部分引擎本次失败，结果可能不完整」；全部无结果时错误摘要带各引擎失败原因
+- **Semantic Scholar API Key**：新增 `academic.semantic_scholar_api_key`（环境变量 `SEMANTIC_SCHOLAR_API_KEY`）；带 key 遇 429/503 退避重试，连续失败自动降级匿名模式（进程内不回切），匿名通道 429 直接报错
+- **Google Scholar 重试强化**：403/429/503 指数退避（1.5s→3s + 随机抖动）并轮换桌面 UA 重试；CAPTCHA（/sorry 跳转）不浪费重试直接报错；结果补全 DOI（落地页 URL 提取，回退摘要内文匹配）
+- **DOI 跨引擎去重（双键）**：学术结果按 DOI + URL 双键合并，任一键命中即视为同文，解决「一方有 DOI、一方只有相同 URL」的漏合并；新增 `antirobot.ExtractDOI` 通用 DOI 提取
+
+### 变更
+- **DDG 限流防护三层化**：实测校准内置钳制（1/s、6/min，宽松配置自动钳制并告警）；202/429 触发进程级冷却（连续翻倍、上限 2min、Retry-After 优先）；冷却避让与搜索超时预算联动——等待 + 重试能装进预算就等一次，注定超时快速放弃
+- **arXiv 限流加强**：对齐 DDG 模式——官方 Tou 1 req/3s 最小间隔 + 内置钳制（1/s、12/min）+ 429/503 冷却避让；本地限流等待同样预算感知
+- `antirobot.RateLimiter` 新增最小间隔约束（`WithMinInterval`）；`ParseRetryAfter` 提升为 antirobot 共享工具（DDG 改为委托）；修复 DDG 进入冷却时错误信息重复翻倍的问题
+
+### 文档
+- README / AGENTS 引擎数量与能力介绍同步 9 学术引擎；AGENTS 过时「能力缺口」表更新为当前能力边界
+- Google 引擎配置处沉淀 JS 挑战时间线（2025-01 灰度上线 → 2025 H2 全量硬化）与「无法通过伪装绕过」的结论
+- 配置文档（中英）与两份 `config.example.yaml` 同步 `semantic_scholar_api_key`、`disable_europepmc/dblp/doaj`
+- 删除已实现完毕的规划文档 `issues/academic-search-improvements.md`
+
 ## v3.1.0 — 2026-08-26
 
 ### 安全

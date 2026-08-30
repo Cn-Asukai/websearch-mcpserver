@@ -17,6 +17,9 @@ func BuildAcademic(opts struct {
 	SemanticScholar antirobot.SemanticScholarOpts
 	PubMed          antirobot.PubMedOpts
 	GoogleScholar   antirobot.GoogleScholarOpts
+	EuropePMC       antirobot.EuropePMCOpts
+	DBLP            antirobot.DBLPOpts
+	DOAJ            antirobot.DOAJOpts
 	ProxyResolve    proxy.ProxyResolver // 代理端点动态解析函数
 }) []antirobot.Engine {
 	var engines []antirobot.Engine
@@ -32,6 +35,15 @@ func BuildAcademic(opts struct {
 	}
 	if opts.PubMed.Enabled && opts.Network >= antirobot.RegionChina {
 		engines = append(engines, NewPubMed(opts.PubMed, directClient))
+	}
+	if opts.EuropePMC.Enabled && opts.Network >= antirobot.RegionChina {
+		engines = append(engines, NewEuropePMC(opts.EuropePMC, directClient))
+	}
+	if opts.DBLP.Enabled && opts.Network >= antirobot.RegionChina {
+		engines = append(engines, NewDBLP(opts.DBLP, directClient))
+	}
+	if opts.DOAJ.Enabled && opts.Network >= antirobot.RegionChina {
+		engines = append(engines, NewDOAJ(opts.DOAJ, directClient))
 	}
 
 	// 国内引擎：arXiv 国内可直连

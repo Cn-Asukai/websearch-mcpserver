@@ -148,6 +148,9 @@ func buildAcademicToolDescription() string {
 		"semantic_scholar": "Semantic Scholar（CS/AI，含引用数/相关度评分）",
 		"pubmed":           "PubMed 生物医学文献（医学/生命科学）",
 		"google_scholar":   "Google Scholar（全学科，含引用数/PDF）",
+		"europepmc":        "Europe PMC 生物医学/生命科学（PubMed 增补，含引用数）",
+		"dblp":             "DBLP 计算机科学文献（CS 会议/期刊索引）",
+		"doaj":             "DOAJ 开放获取期刊（全学科 OA 论文）",
 	}
 
 	var sb strings.Builder
@@ -160,6 +163,6 @@ func buildAcademicToolDescription() string {
 		}
 		sb.WriteString(fmt.Sprintf("  - %s: %s\n", name, desc))
 	}
-	sb.WriteString("\n引擎选择建议：医学/生物 → pubmed | CS/AI → arxiv, semantic_scholar | 全学科 → crossref, openalex, google_scholar")
+	sb.WriteString("\n引擎选择建议：医学/生物 → pubmed, europepmc | CS/AI → arxiv, semantic_scholar, dblp | 全学科 → crossref, openalex, google_scholar | 开放获取 → doaj")
 	return sb.String()
 }

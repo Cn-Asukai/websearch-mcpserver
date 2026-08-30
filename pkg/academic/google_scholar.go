@@ -3,6 +3,7 @@ package academic
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,6 +20,23 @@ import (
 // ──────────────────────────────────────────────────────────────────────────────
 
 const defaultScholarDomain = "scholar.google.com"
+
+// URL 模板与退避基数抽为包级变量，单测可指向 httptest 服务 / 缩短等待。
+var (
+	scholarURLFormat = "https://%s/scholar?%s"
+	scholarRetryBase = 1500 * time.Millisecond // 指数退避基数：1.5s → 3s（叠加 rand 0~0.5s）
+)
+
+// scholarUserAgents 每次请求（含重试）随机轮换的桌面浏览器 UA。
+var scholarUserAgents = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+}
+
+// scholarRandIntn 抽离随机源，单测可固定序列。
+var scholarRandIntn = rand.Intn
 
 type googleScholarEngine struct {
 	client *http.Client
@@ -60,39 +78,54 @@ func (e *googleScholarEngine) Search(query string, page int, timeRange antirobot
 		params.Set("as_ylo", strconv.Itoa(year))
 	}
 
-	scholarURL := fmt.Sprintf("https://%s/scholar?%s", e.domain, params.Encode())
-
-	req, err := http.NewRequest("GET", scholarURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("google scholar request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		loc := resp.Header.Get("Location")
-		if strings.Contains(loc, "/sorry") {
-			return nil, fmt.Errorf("google scholar: access denied (CAPTCHA redirect)")
+	// 重试策略（受 Searcher.execOne 默认 10s per-engine 超时约束，预算 ≤ 8s）：
+	//   403/429/503 → 指数退避 1.5s→3s（+0~0.5s 抖动）换 UA 重试，最多 2 次
+	//   CAPTCHA（/sorry 跳转或 gs_captcha_f 表单）不浪费重试，直接报错交上层处理
+	// GS 走 dynamicProxyTransport，transport 对 429 已按 Retry-After 自动重试一次；
+	// 引擎内退避发生在 transport 重试之后仍 429 的场景，两者不冲突但叠加后
+	// 单引擎最多 3 次上游请求——可接受，勿再加大次数。
+	for attempt := 0; ; attempt++ {
+		scholarURL := fmt.Sprintf(scholarURLFormat, e.domain, params.Encode())
+		req, err := http.NewRequest("GET", scholarURL, nil)
+		if err != nil {
+			return nil, err
 		}
-	}
+		req.Header.Set("User-Agent", scholarUserAgents[scholarRandIntn(len(scholarUserAgents))])
+		req.Header.Set("Referer", "https://scholar.google.com/")
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 
-	if resp.StatusCode != 200 {
+		resp, err := e.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("google scholar request: %w", err)
+		}
+
+		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			loc := resp.Header.Get("Location")
+			resp.Body.Close()
+			if strings.Contains(loc, "/sorry") {
+				return nil, fmt.Errorf("google scholar: access denied (CAPTCHA redirect)")
+			}
+			return nil, fmt.Errorf("google scholar HTTP %d", resp.StatusCode)
+		}
+
+		if resp.StatusCode == 200 {
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return nil, readErr
+			}
+			return parseScholarHTML(body)
+		}
+		resp.Body.Close()
+
+		retryable := resp.StatusCode == 403 || resp.StatusCode == 429 || resp.StatusCode == 503
+		if retryable && attempt < 2 {
+			time.Sleep(scholarRetryBase<<attempt + time.Duration(rand.Int63n(int64(500*time.Millisecond))))
+			continue
+		}
 		return nil, fmt.Errorf("google scholar HTTP %d", resp.StatusCode)
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return parseScholarHTML(body)
 }
 
 // ── HTML 解析 ──
@@ -117,6 +150,12 @@ func parseScholarHTML(data []byte) (*antirobot.SearchResponse, error) {
 		href, _ := sel.Find("h3").First().Find("a").First().Attr("href")
 
 		content := antirobot.CollapseSpace(strings.TrimSpace(sel.Find("div.gs_rs").Text()))
+
+		// GS 无原生 DOI 字段：从出版商落地页 URL 提取，回退摘要内文引用
+		doi := antirobot.ExtractDOI(href)
+		if doi == "" {
+			doi = antirobot.ExtractDOI(content)
+		}
 
 		authorsStr := sel.Find("div.gs_a").Text()
 		authors, journal, _, pubDate := parseScholarMeta(authorsStr)
@@ -148,6 +187,7 @@ func parseScholarHTML(data []byte) (*antirobot.SearchResponse, error) {
 			PublishedAt: pubDate,
 			CitedBy:     citedBy,
 			PDFURL:      pdfURL,
+			DOI:         doi,
 			Engine:      "google_scholar",
 		})
 	})

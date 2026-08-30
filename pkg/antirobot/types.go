@@ -168,18 +168,36 @@ func FormatMarkdown(results []Result) string {
 
 // ── 去重与排序 ──
 
-// DeduplicateResults 按 URL 去重，保留首次出现。
+// DeduplicateResults 按去重键去重（DOI 优先，无 DOI 回退 URL），保留首次出现。
+// 同一篇论文在不同引擎的落地页 URL 几乎必然不同，仅按 URL 去重会漏掉跨源重复。
 func DeduplicateResults(results []Result) []Result {
 	seen := make(map[string]struct{}, len(results))
 	out := make([]Result, 0, len(results))
 	for _, r := range results {
-		if _, dup := seen[r.URL]; dup {
+		k := resultKey(r)
+		if _, dup := seen[k]; dup {
 			continue
 		}
-		seen[r.URL] = struct{}{}
+		seen[k] = struct{}{}
 		out = append(out, r)
 	}
 	return out
+}
+
+// resultKey 结果去重键：DOI 优先，无 DOI 回退 URL（保持原有精确匹配语义）。
+func resultKey(r Result) string {
+	if doi := NormalizeDOI(r.DOI); doi != "" {
+		return "doi:" + doi
+	}
+	return "url:" + r.URL
+}
+
+// NormalizeDOI 归一化 DOI：小写、去 DOI 解析站前缀。
+func NormalizeDOI(doi string) string {
+	doi = strings.ToLower(strings.TrimSpace(doi))
+	doi = strings.TrimPrefix(doi, "https://doi.org/")
+	doi = strings.TrimPrefix(doi, "http://doi.org/")
+	return doi
 }
 
 // NormalizeAndSortResults 对去重后的结果按引擎分组归一化分数，再全局降序排序。

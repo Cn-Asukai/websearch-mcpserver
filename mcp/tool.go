@@ -232,7 +232,7 @@ func doAcademicSearch(query string, engines []string, timeRange string, page int
 			results, parseErr := rec.GetRawResults()
 			if parseErr == nil {
 				log.Infof("学术缓存命中: query=%s", query)
-				ret, mergeErr := formatAcademicResults(query, results)
+				ret, mergeErr := formatAcademicResults(query, search.AcademicSearchResult{Results: results})
 				if mergeErr == nil {
 					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
 				}
@@ -248,17 +248,18 @@ func doAcademicSearch(query string, engines []string, timeRange string, page int
 	}
 
 	log.Infof("学术搜索: query=%s, engines=%v, timeRange=%s, page=%d", query, engines, timeRange, page)
-	results, err := academicSearcher.SearchAcademicRaw(query, opts)
+	res, err := academicSearcher.SearchAcademicRaw(query, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("学术搜索失败: %w", err)
 	}
 
-	ret, err := formatAcademicResults(query, results)
+	ret, err := formatAcademicResults(query, res)
 	if err != nil {
 		return nil, nil, err
 	}
 	if cacheInst != nil {
-		_ = cacheInst.Store(cacheKey, "", true, results, "")
+		// 逐引擎错误不写入缓存（Store 仍只存干净结果），命中路径展示的是上次结果
+		_ = cacheInst.Store(cacheKey, "", true, res.Results, "")
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: ret}}}, nil, nil
 }
@@ -315,11 +316,11 @@ func notifyProgress(ctx context.Context, req *mcp.CallToolRequest, progress, tot
 	}
 }
 
-func formatAcademicResults(query string, results []search.SearchResult) (string, error) {
+func formatAcademicResults(query string, res search.AcademicSearchResult) (string, error) {
 	if adapter, ok := academicSearcher.(*search.AcademicAdapter); ok {
-		return adapter.MergeContent(query, results)
+		return adapter.MergeContentWithErrors(query, res.Results, res.EngineErrors)
 	}
-	return searchapi.MergeContent(query, results)
+	return searchapi.MergeContent(query, res.Results)
 }
 
 func formatRawResults(query string, results []search.SearchResult) (string, error) {

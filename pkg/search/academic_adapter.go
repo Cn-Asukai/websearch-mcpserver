@@ -3,6 +3,8 @@ package search
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"websearch/pkg/academic"
 	"websearch/pkg/antirobot"
+	"websearch/pkg/log"
 	"websearch/pkg/proxy"
 	md "websearch/pkg/xml"
 )
@@ -27,6 +30,13 @@ type AcademicAdapter struct {
 	threshold float64            // 学术结果阀值（默认 0.02）
 }
 
+// AcademicSearchResult 学术搜索聚合结果：结果列表 + 逐引擎错误信息。
+// EngineErrors 仅含本次失败的引擎（成功引擎不出现），不写入缓存。
+type AcademicSearchResult struct {
+	Results      []SearchResult
+	EngineErrors map[string]string // engine name → error message
+}
+
 // SetEnhance 启用/关闭学术评分增强，threshold <= 0 时使用默认 0.02。
 func (a *AcademicAdapter) SetEnhance(enabled bool, threshold float64) {
 	a.enhance = enabled
@@ -42,6 +52,9 @@ type AcademicConfig struct {
 	SemanticScholar antirobot.SemanticScholarOpts
 	PubMed          antirobot.PubMedOpts
 	GoogleScholar   antirobot.GoogleScholarOpts
+	EuropePMC       antirobot.EuropePMCOpts
+	DBLP            antirobot.DBLPOpts
+	DOAJ            antirobot.DOAJOpts
 	ProxyResolve    proxy.ProxyResolver // 代理端点动态解析函数
 }
 
@@ -55,6 +68,9 @@ func NewAcademicAdapter(conf AcademicConfig) *AcademicAdapter {
 		SemanticScholar antirobot.SemanticScholarOpts
 		PubMed          antirobot.PubMedOpts
 		GoogleScholar   antirobot.GoogleScholarOpts
+		EuropePMC       antirobot.EuropePMCOpts
+		DBLP            antirobot.DBLPOpts
+		DOAJ            antirobot.DOAJOpts
 		ProxyResolve    proxy.ProxyResolver
 	}{
 		Network:         conf.Network,
@@ -64,6 +80,9 @@ func NewAcademicAdapter(conf AcademicConfig) *AcademicAdapter {
 		SemanticScholar: conf.SemanticScholar,
 		PubMed:          conf.PubMed,
 		GoogleScholar:   conf.GoogleScholar,
+		EuropePMC:       conf.EuropePMC,
+		DBLP:            conf.DBLP,
+		DOAJ:            conf.DOAJ,
 		ProxyResolve:    conf.ProxyResolve,
 	})
 
@@ -76,7 +95,9 @@ func NewAcademicAdapter(conf AcademicConfig) *AcademicAdapter {
 }
 
 // SearchAcademicRaw 实现 AcademicSearcher 接口，返回学术论文搜索结果。
-func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearchOptions) ([]SearchResult, error) {
+// 单个引擎失败不影响整体：失败引擎记入 AcademicSearchResult.EngineErrors，
+// 调用方据此提示结果可能不完整。
+func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearchOptions) (AcademicSearchResult, error) {
 	var opt AcademicSearchOptions
 	if len(opts) > 0 {
 		opt = opts[0]
@@ -97,7 +118,7 @@ func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearch
 	if len(opt.Engines) > 0 {
 		filtered := a.filterEngines(opt.Engines)
 		if len(filtered) == 0 {
-			return nil, fmt.Errorf("指定的引擎均不可用: %v", opt.Engines)
+			return AcademicSearchResult{}, fmt.Errorf("指定的引擎均不可用: %v", opt.Engines)
 		}
 		searcher = antirobot.NewSearcher(antirobot.StrategyParallel, filtered)
 		searcher.TimeRange = tr
@@ -106,10 +127,16 @@ func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearch
 	responses := searcher.Search(ctx, query, opt.Page)
 
 	// 保留 per-engine 排名信息（评分增强的 RRF 融合依赖各引擎内部顺序）
+	var engineErrors map[string]string
 	var buckets []scoreBucket
 	var all []antirobot.Result
 	for _, resp := range responses {
 		if resp.Error != "" {
+			log.Warnf("academic: engine %s failed: %v", resp.Engine, resp.Error)
+			if engineErrors == nil {
+				engineErrors = make(map[string]string)
+			}
+			engineErrors[resp.Engine] = resp.Error
 			continue
 		}
 		if a.enhance {
@@ -136,19 +163,37 @@ func (a *AcademicAdapter) SearchAcademicRaw(query string, opts ...AcademicSearch
 	if a.enhance {
 		results := EnhanceAcademicResults(query, buckets, a.threshold, 0)
 		if len(results) == 0 {
-			return nil, fmt.Errorf("学术引擎搜索无结果")
+			return AcademicSearchResult{}, noResultError(engineErrors)
 		}
-		return results, nil
+		return AcademicSearchResult{Results: results, EngineErrors: engineErrors}, nil
 	}
 
 	all = antirobot.DeduplicateResults(all)
 	all = antirobot.NormalizeAndSortResults(all)
 
 	if len(all) == 0 {
-		return nil, fmt.Errorf("学术引擎搜索无结果")
+		return AcademicSearchResult{}, noResultError(engineErrors)
 	}
 
-	return toSearchResults(all), nil
+	return AcademicSearchResult{Results: toSearchResults(all), EngineErrors: engineErrors}, nil
+}
+
+// noResultError 全部引擎无结果时返回错误；有引擎失败的把错误拼进 message。
+func noResultError(engineErrors map[string]string) error {
+	if len(engineErrors) == 0 {
+		return fmt.Errorf("学术引擎搜索无结果")
+	}
+	return fmt.Errorf("学术引擎搜索无结果（%s）", engineErrorSummary(engineErrors))
+}
+
+// engineErrorSummary 把逐引擎错误拼成单行摘要（引擎名稳定排序）。
+func engineErrorSummary(errs map[string]string) string {
+	names := slices.Sorted(maps.Keys(errs))
+	parts := make([]string, 0, len(names))
+	for _, n := range names {
+		parts = append(parts, fmt.Sprintf("%s: %s", n, errs[n]))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // toSearchResults 将 antirobot.Result 列表转换为 SearchResult 列表（保留学术元数据与 score）。
@@ -194,6 +239,25 @@ func (a *AcademicAdapter) MergeContent(query string, results []SearchResult) (st
 		}
 	}
 	return buf.String(), nil
+}
+
+// MergeContentWithErrors 格式化学术搜索结果，末尾附逐引擎失败警告。
+// engineErrors 为空时输出与 MergeContent 完全一致。
+func (a *AcademicAdapter) MergeContentWithErrors(query string, results []SearchResult, engineErrors map[string]string) (string, error) {
+	out, err := a.MergeContent(query, results)
+	if err != nil {
+		return "", err
+	}
+	if len(engineErrors) == 0 {
+		return out, nil
+	}
+	var b strings.Builder
+	b.WriteString(out)
+	b.WriteString("\n> ⚠ 部分引擎本次失败，结果可能不完整：")
+	for _, n := range slices.Sorted(maps.Keys(engineErrors)) {
+		b.WriteString(fmt.Sprintf("%s (%s)；", n, engineErrors[n]))
+	}
+	return b.String(), nil
 }
 
 // Engines 返回已注册的学术引擎名称列表。

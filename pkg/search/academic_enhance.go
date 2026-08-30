@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"websearch/pkg/antirobot"
 	"websearch/pkg/log"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 学术搜索评分增强流水线：RRF 融合 + 学术特有信号 + 阀值过滤。
-// 参考 docs/academic-scoring-enhancement.md。
 //
 // 评分公式：
 //   final = rrf × cite_factor
@@ -113,8 +113,10 @@ func AcademicRecencyFactor(temporal bool, publishDate string) float64 {
 func EnhanceAcademicResults(query string, buckets []scoreBucket, threshold float64, maxSize int) []SearchResult {
 	temporal := HasTemporalIntent(query)
 
-	order := make([]string, 0)
-	m := make(map[string]*urlAgg)
+	order := make([]*urlAgg, 0)
+	// 双键索引：同一聚合条目同时登记 DOI 键与 URL 键，任一键命中即合并
+	byDOI := make(map[string]*urlAgg)
+	byURL := make(map[string]*urlAgg)
 
 	for _, b := range buckets {
 		w := b.weight
@@ -122,38 +124,46 @@ func EnhanceAcademicResults(query string, buckets []scoreBucket, threshold float
 			w = 1.0
 		}
 		for rank, r := range b.results {
-			key := normalizeURLKey(r.Url)
-			if key == "" {
+			doiKey := antirobot.NormalizeDOI(r.DOI)
+			urlKey := normalizeURLKey(r.Url)
+			if doiKey == "" && urlKey == "" {
 				continue
 			}
-			a, ok := m[key]
-			if !ok {
+			a := byDOI[doiKey]
+			if a == nil {
+				a = byURL[urlKey]
+			}
+			if a == nil {
 				a = &urlAgg{res: r, engines: make(map[string]struct{})}
-				m[key] = a
-				order = append(order, key)
-			} else {
-				// 合并元数据：保留更完整的摘要/标题/日期，引用数取较大值
-				if len(r.Content) > len(a.res.Content) {
-					a.res.Content = r.Content
-				}
-				if a.res.Title == "" && r.Title != "" {
-					a.res.Title = r.Title
-				}
-				if a.res.PublishDate == "" && r.PublishDate != "" {
-					a.res.PublishDate = r.PublishDate
-				}
-				if r.CitedBy > a.res.CitedBy {
-					a.res.CitedBy = r.CitedBy
-				}
-				if a.res.Journal == "" && r.Journal != "" {
-					a.res.Journal = r.Journal
-				}
-				if a.res.PDFURL == "" && r.PDFURL != "" {
-					a.res.PDFURL = r.PDFURL
-				}
-				if a.res.DOI == "" && r.DOI != "" {
-					a.res.DOI = r.DOI
-				}
+				order = append(order, a)
+			}
+			if doiKey != "" {
+				byDOI[doiKey] = a
+			}
+			if urlKey != "" {
+				byURL[urlKey] = a
+			}
+			// 合并元数据：保留更完整的摘要/标题/日期，引用数取较大值
+			if len(r.Content) > len(a.res.Content) {
+				a.res.Content = r.Content
+			}
+			if a.res.Title == "" && r.Title != "" {
+				a.res.Title = r.Title
+			}
+			if a.res.PublishDate == "" && r.PublishDate != "" {
+				a.res.PublishDate = r.PublishDate
+			}
+			if r.CitedBy > a.res.CitedBy {
+				a.res.CitedBy = r.CitedBy
+			}
+			if a.res.Journal == "" && r.Journal != "" {
+				a.res.Journal = r.Journal
+			}
+			if a.res.PDFURL == "" && r.PDFURL != "" {
+				a.res.PDFURL = r.PDFURL
+			}
+			if a.res.DOI == "" && r.DOI != "" {
+				a.res.DOI = r.DOI
 			}
 			a.rrf += w * (1.0 / (rrfK + float64(rank)))
 			if _, dup := a.engines[b.name]; !dup {
@@ -164,8 +174,7 @@ func EnhanceAcademicResults(query string, buckets []scoreBucket, threshold float
 	}
 
 	scored := make([]SearchResult, 0, len(order))
-	for _, key := range order {
-		a := m[key]
+	for _, a := range order {
 		score := a.rrf * CiteFactor(a.res.CitedBy)
 		score += JournalBoost(a.res.Journal)
 		if a.res.PDFURL != "" {
@@ -209,36 +218,56 @@ func applyAcademicScoreFloor(scored []SearchResult, buckets []scoreBucket, thres
 	}
 
 	kept := make([]SearchResult, 0, len(scored))
-	keptURLs := make(map[string]struct{}, len(scored))
+	keptKeys := make(map[string]struct{}, len(scored)*2)
+	addKeys := func(r SearchResult) {
+		for _, k := range resultKeys(r) {
+			keptKeys[k] = struct{}{}
+		}
+	}
 	for i, r := range scored {
 		if i == 0 { // Top-1 永不过滤
 			kept = append(kept, r)
-			keptURLs[normalizeURLKey(r.Url)] = struct{}{}
+			addKeys(r)
 			continue
 		}
 		if r.Score >= threshold {
 			kept = append(kept, r)
-			keptURLs[normalizeURLKey(r.Url)] = struct{}{}
+			addKeys(r)
 		}
 	}
 
-	// 每引擎保底：引擎内第一名若被过滤则恢复（带原 score，保持排序）
+	// 每引擎保底：引擎内第一名若被过滤则恢复（带原 score，保持排序）。
+	// 命中判定与合并逻辑一致：DOI 键或 URL 键任一匹配即算同文。
 	topKeys := make(map[string]struct{})
 	for _, b := range buckets {
 		if len(b.results) == 0 {
 			continue
 		}
-		if k := normalizeURLKey(b.results[0].Url); k != "" {
+		for _, k := range resultKeys(b.results[0]) {
 			topKeys[k] = struct{}{}
 		}
 	}
 	for _, r := range scored {
-		k := normalizeURLKey(r.Url)
-		if _, need := topKeys[k]; need {
-			if _, in := keptURLs[k]; !in {
-				kept = append(kept, r)
-				keptURLs[k] = struct{}{}
+		need := false
+		for _, k := range resultKeys(r) {
+			if _, ok := topKeys[k]; ok {
+				need = true
+				break
 			}
+		}
+		if !need {
+			continue
+		}
+		in := false
+		for _, k := range resultKeys(r) {
+			if _, ok := keptKeys[k]; ok {
+				in = true
+				break
+			}
+		}
+		if !in {
+			kept = append(kept, r)
+			addKeys(r)
 		}
 	}
 

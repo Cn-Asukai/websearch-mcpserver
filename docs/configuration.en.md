@@ -129,6 +129,11 @@ academic:
   disable_pubmed: false
   disable_semantic_scholar: true    # Disabled by default (auto-proxied when enabled)
   disable_google_scholar: true      # Disabled by default (auto-proxied when enabled)
+  # Optional Semantic Scholar API key (degrades to anonymous after consecutive 429s)
+  # semantic_scholar_api_key: ""   # env: SEMANTIC_SCHOLAR_API_KEY
+  disable_europepmc: false  # Europe PMC biomedical supplement (direct from China)
+  disable_dblp: false       # DBLP CS conference/journal index (direct from China)
+  disable_doaj: false       # DOAJ open-access journals (direct from China)
 
 # Proxy (auto-detects system proxy by default, no manual config needed)
 proxy:
@@ -270,6 +275,10 @@ log:
 | `academic.threshold` | 0.02 | Academic result threshold |
 | `academic.disable_semantic_scholar` | true | Disabled by default, auto-proxied when enabled |
 | `academic.disable_google_scholar` | true | Disabled by default, auto-proxied when enabled |
+| `academic.semantic_scholar_api_key` | "" | Optional API key; auto-degrades to anonymous after consecutive 429s (env `SEMANTIC_SCHOLAR_API_KEY`) |
+| `academic.disable_europepmc` | false | Europe PMC biomedical supplement, reachable from China |
+| `academic.disable_dblp` | false | DBLP CS conference/journal index, reachable from China |
+| `academic.disable_doaj` | false | DOAJ open-access journals, reachable from China |
 | `proxy.enabled` | unset | Auto-detects system proxy when not set; explicit false disables; explicit true uses endpoint |
 | `proxy.endpoint` | `http://127.0.0.1:7897` | Only effective when `enabled: true` |
 | `cleanfetch.enabled` | false | Old configs don't enable; must be explicit |

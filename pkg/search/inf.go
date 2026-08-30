@@ -51,7 +51,7 @@ type AcademicSearchOptions struct {
 
 // AcademicSearcher 支持学术搜索的引擎可实现此接口。
 type AcademicSearcher interface {
-	SearchAcademicRaw(query string, opts ...AcademicSearchOptions) ([]SearchResult, error)
+	SearchAcademicRaw(query string, opts ...AcademicSearchOptions) (AcademicSearchResult, error)
 	AcademicEngines() []string // 返回可用的学术引擎列表
 }
 

@@ -123,12 +123,17 @@ academic:
   bing_fallback: true       # 学术搜索用 Bing 兜底
   enhance: true             # 学术评分增强（RRF 融合 + 引用数/期刊权威/PDF/新鲜度信号），默认 true
   threshold: 0.02           # 学术结果阀值（比通用搜索更宽松），默认 0.02
+  # Semantic Scholar 可选 API key（匿名限流严格，带 key 连续 429 自动降级匿名）
+  # semantic_scholar_api_key: ""   # 环境变量: SEMANTIC_SCHOLAR_API_KEY
   disable_arxiv: false
   disable_crossref: false
   disable_openalex: false
   disable_pubmed: false
   disable_semantic_scholar: true    # 默认禁用（开启后自动通过代理访问）
   disable_google_scholar: true      # 默认禁用（开启后自动通过代理访问）
+  disable_europepmc: false  # Europe PMC 生物医学增补源（国内可直连）
+  disable_dblp: false       # DBLP CS 会议/期刊索引（国内可直连）
+  disable_doaj: false       # DOAJ 开放获取期刊（国内可直连）
 
 # 代理（默认自动检测系统代理，无需手动配置）
 proxy:
@@ -270,6 +275,10 @@ log:
 | `academic.threshold` | 0.02 | 学术结果阀值 |
 | `academic.disable_semantic_scholar` | true | 默认禁用，开启后自动走代理 |
 | `academic.disable_google_scholar` | true | 默认禁用，开启后自动走代理 |
+| `academic.semantic_scholar_api_key` | "" | 可选 API key，带 key 连续 429 自动降级匿名（环境变量 `SEMANTIC_SCHOLAR_API_KEY`） |
+| `academic.disable_europepmc` | false | Europe PMC 生物医学增补源，国内可直连 |
+| `academic.disable_dblp` | false | DBLP CS 会议/期刊索引，国内可直连 |
+| `academic.disable_doaj` | false | DOAJ 开放获取期刊，国内可直连 |
 | `proxy.enabled` | 未设置 | 未设置时自动检测系统代理；显式 false 禁用；显式 true 使用 endpoint |
 | `proxy.endpoint` | `http://127.0.0.1:7897` | 仅 `enabled: true` 时生效 |
 | `cleanfetch.enabled` | false | 旧配置不启用，需显式开启 |

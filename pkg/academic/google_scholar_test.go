@@ -54,6 +54,42 @@ func TestGoogleScholarSearch(t *testing.T) {
 	}
 }
 
+// TestParseScholarHTML_DOI GS 无原生 DOI 字段，落地页 URL 或摘要中含 DOI 时应补全。
+func TestParseScholarHTML_DOI(t *testing.T) {
+	html := `<div data-rp="1">
+		<h3><a href="https://www.nature.com/articles/10.1038/nature12373">Paper From Publisher</a></h3>
+		<div class="gs_a">A Author - Nature, 2013 - nature.com</div>
+		<div class="gs_rs">Some abstract text without DOI reference.</div>
+	</div>
+	<div data-rp="2">
+		<h3><a href="https://example.com/articles/second-paper">Paper From Abstract</a></h3>
+		<div class="gs_a">B Author - Springer, 2014 - springer.com</div>
+		<div class="gs_rs">This work extends 10.1007/978-3-319-00000-0_2 as cited before.</div>
+	</div>
+	<div data-rp="3">
+		<h3><a href="https://arxiv.org/abs/1706.03762">No DOI Anywhere</a></h3>
+		<div class="gs_a">C Author - arXiv, 2017 - arxiv.org</div>
+		<div class="gs_rs">Plain preprint abstract.</div>
+	</div>`
+
+	resp, err := parseScholarHTML([]byte(html))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(resp.Results) != 3 {
+		t.Fatalf("want 3 results, got %d", len(resp.Results))
+	}
+	if got := resp.Results[0].DOI; got != "10.1038/nature12373" {
+		t.Errorf("落地页 DOI = %q", got)
+	}
+	if got := resp.Results[1].DOI; got != "10.1007/978-3-319-00000-0_2" {
+		t.Errorf("摘要内文 DOI = %q", got)
+	}
+	if got := resp.Results[2].DOI; got != "" {
+		t.Errorf("无 DOI 来源应为空, got %q", got)
+	}
+}
+
 func TestParseScholarMeta(t *testing.T) {
 	tests := []struct {
 		input        string

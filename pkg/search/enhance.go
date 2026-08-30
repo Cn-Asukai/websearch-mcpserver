@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"websearch/pkg/antirobot"
 	"websearch/pkg/config"
 	"websearch/pkg/log"
 )
@@ -75,6 +76,20 @@ func normalizeURLKey(raw string) string {
 		return strings.TrimRight(s, "/")
 	}
 	return key
+}
+
+// resultKeys 学术结果去重键组：DOI 与 URL 各生成一个键，任一键命中即视为同文。
+// 仅按 DOI 单键会漏掉"一方有 DOI 一方只有相同 URL"的合并，故用双键交集匹配。
+// 两键均为空时返回空（调用方应跳过该结果）。
+func resultKeys(r SearchResult) []string {
+	keys := make([]string, 0, 2)
+	if doi := antirobot.NormalizeDOI(r.DOI); doi != "" {
+		keys = append(keys, "doi:"+doi)
+	}
+	if k := normalizeURLKey(r.Url); k != "" {
+		keys = append(keys, "url:"+k)
+	}
+	return keys
 }
 
 // urlAgg 单个去重 URL 的聚合信息。

@@ -11,7 +11,7 @@
 
 ## Introduction
 
-An MCP search service written in Go with built-in Baidu web search, Bing, DuckDuckGo and other general-purpose engines plus 6 academic search engines. Use it as MCP tools in Claude Code, Qwen Code, Cursor, or embed it as a Go module in your own service.
+An MCP search service written in Go with built-in Baidu web search, Bing, DuckDuckGo and other general-purpose engines plus 9 academic search engines. Use it as MCP tools in Claude Code, Qwen Code, Cursor, or embed it as a Go module in your own service.
 
 ## Design Background & Goals
 
@@ -33,7 +33,7 @@ So I started in 2026-04 with a single Baidu Qianfan engine and evolved it into a
 | China-friendly | Poor (overseas) | Manual proxy config | System proxy auto-detection |
 | Provider resilience | Single provider, no fallback | Engine aggregation | Multi-engine + auto-fallback |
 | LLM optimization | Raw results | Raw results | Local scoring + dedup + optional summary |
-| Academic search | No | No | 6 academic engines |
+| Academic search | No | No | 9 academic engines |
 | Fetch / PDF | Separate integration | No | Built-in cleanfetch / pdf_parser |
 | Data privacy | Third-party servers | Local | Local |
 
@@ -49,7 +49,7 @@ So I started in 2026-04 with a single Baidu Qianfan engine and evolved it into a
 
 **A complete tool chain for LLMs** — The 4 tools cover the full web workflow: `smartsearch` search (optional LLM structured summary) → `academicsearch` academic search → `cleanfetch` fetch the source → `pdf_parser` parse PDFs, with results feeding into each other — one config enables the whole chain.
 
-**Scenario-specific optimization** — Optimized for real usage scenarios: academic search (6 engines + citation / journal / PDF scoring), China networking (direct connect + system proxy auto-detection), scanned PDFs (MinerU OCR fallback), recency queries (`time_range`).
+**Scenario-specific optimization** — Optimized for real usage scenarios: academic search (9 engines + citation / journal / PDF scoring), China networking (direct connect + system proxy auto-detection), scanned PDFs (MinerU OCR fallback), recency queries (`time_range`).
 
 ## Quick Start
 
@@ -84,9 +84,9 @@ Or use MCP Hooks for session auto start/stop (Qwen Code example; full details in
 | Capability | Description |
 |------------|-------------|
 | Zero-key search | `engine` mode runs Baidu web search + Bing concurrently, no API keys required |
-| Multi-engine fusion | 6 search modes, 7 general engines + 6 academic engines, auto-fallback on primary engine failure |
+| Multi-engine fusion | 6 search modes, 7 general engines + 9 academic engines, auto-fallback on primary engine failure |
 | Relevance scoring | RRF fusion ranking + lexical alignment / domain quality / consensus / authority / recency boosts, low-score results pruned; MMR breaks up same-topic similar results (mirror / repost sites) |
-| Academic search | 6 academic engines in parallel, scored by citation count / journal authority / PDF availability / recency |
+| Academic search | 9 academic engines in parallel, scored by citation count / journal authority / PDF availability / recency; cross-engine DOI dedup, per-engine failure passthrough |
 | Web fetching | `cleanfetch` fetches pages without a proxy, with built-in SSRF / DNS-rebinding protection and oversized-file pre-check |
 | PDF parsing | Local PDFs prefer text extraction; scanned PDFs can fall back to MinerU OCR |
 | LLM summarization | Optional OpenAI-compatible API for structured summaries, with streaming progress |

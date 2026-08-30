@@ -2,6 +2,26 @@
 
 [English](CHANGELOG.en.md) | [中文](CHANGELOG.md)
 
+## v3.2.0 — 2026-08-30
+
+### Added
+- **Academic search expanded to 9 engines**: new Europe PMC (biomedical, PubMed supplement), DBLP (CS conference/journal index), DOAJ (open-access journals) — all directly reachable from China; `academicsearch` tool description and engine-selection advice updated
+- **Per-engine error passthrough**: failed academic engines are no longer swallowed silently — recorded in `EngineErrors` and surfaced as a "some engines failed this run" note appended to results; all-failed searches get a per-engine error summary
+- **Semantic Scholar API key**: new `academic.semantic_scholar_api_key` (env `SEMANTIC_SCHOLAR_API_KEY`); with a key, 429/503 backs off and retries, then permanently degrades to anonymous in-process; anonymous-channel 429s error out immediately
+- **Google Scholar retry hardening**: 403/429/503 exponential backoff (1.5s→3s + jitter) with rotating desktop user agents; CAPTCHA redirects fail fast without wasting retries; results now carry a DOI (extracted from the landing-page URL, falling back to abstract text)
+- **Cross-engine DOI dedup (dual-key)**: academic results merge by DOI + URL keys — either key matching counts as the same paper, fixing missed merges when one side has only a DOI; new shared `antirobot.ExtractDOI` utility
+
+### Changed
+- **DDG rate-limit protection, three layers**: measured clamping (1/s, 6/min — looser configs clamped with a warning); 202/429 triggers a process-level cooldown (doubling, 2-min cap, Retry-After priority); cooldown avoidance is budget-aware — waits and retries within the search timeout budget, gives up fast when the wait is doomed to exceed it
+- **arXiv rate-limit hardening**: same pattern as DDG — official Tou 1 req/3s minimum interval + built-in clamping (1/s, 12/min) + 429/503 cooldown avoidance with budget awareness
+- `antirobot.RateLimiter` gained a minimum-interval constraint (`WithMinInterval`); `ParseRetryAfter` promoted to a shared antirobot utility (DDG now delegates); fixed the DDG cooldown error message double-doubling the actual wait
+
+### Documentation
+- README / AGENTS engine counts and capability descriptions updated to 9 academic engines; AGENTS stale "capability gaps" table replaced with current capability boundaries
+- Google engine config now documents the JS-challenge timeline (2025-01 gray rollout → 2025 H2 full hardening) and the "cannot be bypassed by masquerading" conclusion
+- Config docs (zh/en) and both `config.example.yaml` files updated for `semantic_scholar_api_key`, `disable_europepmc/dblp/doaj`
+- Removed the fully-implemented planning doc `issues/academic-search-improvements.md`
+
 ## v3.1.0 — 2026-08-26
 
 ### Security

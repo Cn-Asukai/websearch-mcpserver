@@ -4,32 +4,46 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"websearch/pkg/antirobot"
+	"websearch/pkg/log"
 )
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Semantic Scholar 学术搜索（海外优先）
 // ──────────────────────────────────────────────────────────────────────────────
 
+// 退避时长与 API 端点抽为包级变量，单测可缩短等待/指向 httptest 服务。
+var (
+	ssSearchEndpoint = "https://api.semanticscholar.org/graph/v1/paper/search"
+	ssRetryBackoff   = 2 * time.Second // 带 key 首次 429/503 退避（叠加 rand 0~1s）
+	ssDegradedWait   = 1 * time.Second // 降级匿名后最后一次重试前的等待
+)
+
 type semanticScholarEngine struct {
-	client *http.Client
+	client      *http.Client
+	apiKey      string
+	keyDisabled atomic.Bool // 连续 429 后降级为匿名，进程内不再回切（并发搜索共享实例，须原子访问）
 }
 
 // NewSemanticScholar 创建 Semantic Scholar 引擎。client 为 nil 时使用默认客户端。
-func NewSemanticScholar(_ antirobot.SemanticScholarOpts, client *http.Client) antirobot.Engine {
+func NewSemanticScholar(opts antirobot.SemanticScholarOpts, client *http.Client) antirobot.Engine {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &semanticScholarEngine{client: client}
+	return &semanticScholarEngine{client: client, apiKey: opts.APIKey}
 }
 
-func (e *semanticScholarEngine) Name() string                    { return "semantic_scholar" }
-func (e *semanticScholarEngine) Region() antirobot.NetworkRegion { return antirobot.RegionInternational }
+func (e *semanticScholarEngine) Name() string { return "semantic_scholar" }
+func (e *semanticScholarEngine) Region() antirobot.NetworkRegion {
+	return antirobot.RegionInternational
+}
 
 func (e *semanticScholarEngine) Search(query string, page int, timeRange antirobot.TimeRange) (*antirobot.SearchResponse, error) {
 	offset := (page - 1) * 10
@@ -48,30 +62,53 @@ func (e *semanticScholarEngine) Search(query string, page int, timeRange antirob
 		params.Set("year", year+"-")
 	}
 
-	u := "https://api.semanticscholar.org/graph/v1/paper/search?" + params.Encode()
+	u := ssSearchEndpoint + "?" + params.Encode()
 
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return nil, err
+	// 重试策略（受 Searcher.execOne 默认 10s per-engine 超时约束，退避预算 ≤ 4s）：
+	//   带 key:   429/503 → 退避 2~3s 重试 → 仍 429/503 则永久降级匿名，等 1s 最后重试一次
+	//   无 key:   429/503 直接报错（匿名共享配额短窗内不会恢复）
+	// proxy 层 retryTransport 对 429 已按 Retry-After 自动重试一次，两者叠加后
+	// 单引擎最多 3 次引擎内请求，勿再加大。
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "websearch/1.0")
+		if e.apiKey != "" && !e.keyDisabled.Load() {
+			req.Header.Set("x-api-key", e.apiKey)
+		}
+
+		resp, err := e.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("semantic scholar request: %w", err)
+		}
+		if resp.StatusCode == 200 {
+			body, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				return nil, readErr
+			}
+			return e.parse(body)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != 429 && resp.StatusCode != 503 {
+			return nil, fmt.Errorf("semantic scholar HTTP %d", resp.StatusCode)
+		}
+		if e.apiKey == "" || e.keyDisabled.Load() {
+			return nil, fmt.Errorf("semantic scholar HTTP %d", resp.StatusCode)
+		}
+		if attempt == 0 {
+			time.Sleep(ssRetryBackoff + time.Duration(rand.Int63n(int64(time.Second))))
+			continue
+		}
+		// 第二次仍限流：降级为匿名模式（engine 为进程级长生命周期单例，
+		// 并发下最坏多打一次带 key 请求，无害）
+		e.keyDisabled.Store(true)
+		log.Warnf("semantic scholar: API key 连续 429，进程内降级为匿名模式（不再回切）")
+		time.Sleep(ssDegradedWait)
 	}
-	req.Header.Set("User-Agent", "websearch/1.0")
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("semantic scholar request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("semantic scholar HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return e.parse(body)
 }
 
 // ── JSON 解析 ──

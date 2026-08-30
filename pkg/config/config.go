@@ -123,8 +123,17 @@ type DuckDuckGoConfig struct {
 	Blocked []string `mapstructure:"blocked"` // DuckDuckGo 屏蔽域名
 }
 
+// GoogleConfig Google 网页搜索配置。
+//
+// 反爬现状（2026-08 调研，勿再尝试伪装修复）：
+// Google 自 2025-01-15 起灰度上线 JS 挑战（SearchGuard），2025 上半年灰度期间仍可
+// 间歇直抓（当年 4-5 月尚可用），2025 下半年起全量硬化。挑战是"凭据缺失"模型：
+// HTTP 200 返回 ~91KB 空壳页面、零结果、静默失败（无 4xx/5xx 错误码），没有真实
+// 浏览器 JS 执行环境就没有结果。UA 伪装（含 Nokia 功能机 UA + gbv=1 旧端点）与
+// TLS 指纹伪装已全部失效（参见 SearXNG #5651/#6570）。剩余可行路径只有无头浏览器
+// + 住宅/移动代理、SERP API、或聚合其他引擎（本项目现有方案），因此保持默认关闭。
 type GoogleConfig struct {
-	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 false，被反爬拦截暂不可用）
+	Enabled bool     `mapstructure:"enabled"` // 总开关（默认 false，JS 挑战拦截无法伪装绕过，见上）
 	Blocked []string `mapstructure:"blocked"` // Google 屏蔽域名
 }
 
@@ -142,6 +151,10 @@ type AcademicConfig struct {
 	Enhance      bool    `mapstructure:"enhance"`       // 学术搜索评分增强（RRF 融合 + 引用数/期刊权威/PDF/新鲜度信号），默认 true
 	Threshold    float64 `mapstructure:"threshold"`     // 学术结果阀值（比通用搜索更宽松），默认 0.02
 
+	// Semantic Scholar 可选 API key（环境变量 SEMANTIC_SCHOLAR_API_KEY 可覆盖）。
+	// 匿名配额限流严格，带 key 连续 429 时引擎自动降级为匿名模式。
+	SemanticScholarAPIKey string `mapstructure:"semantic_scholar_api_key"`
+
 	// 各引擎独立禁用（默认 false = 启用）
 	DisableArxiv           bool `mapstructure:"disable_arxiv"`
 	DisableCrossref        bool `mapstructure:"disable_crossref"`
@@ -149,6 +162,9 @@ type AcademicConfig struct {
 	DisableSemanticScholar bool `mapstructure:"disable_semantic_scholar"`
 	DisablePubMed          bool `mapstructure:"disable_pubmed"`
 	DisableGoogleScholar   bool `mapstructure:"disable_google_scholar"`
+	DisableEuropePMC       bool `mapstructure:"disable_europepmc"`
+	DisableDBLP            bool `mapstructure:"disable_dblp"`
+	DisableDOAJ            bool `mapstructure:"disable_doaj"`
 }
 
 // ── CleanFetch 配置 ──
@@ -677,6 +693,9 @@ func applyKnownEnv(conf *Config) {
 	}
 	if v := os.Getenv("MINERU_TOKEN"); v != "" {
 		conf.PDFParser.MinerUToken = v
+	}
+	if v := os.Getenv("SEMANTIC_SCHOLAR_API_KEY"); v != "" {
+		conf.Academic.SemanticScholarAPIKey = v
 	}
 	if v := os.Getenv("WEBSEARCH_TOKEN"); v != "" {
 		conf.AuthToken = v

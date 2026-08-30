@@ -6,7 +6,6 @@ import "math"
 // MMR（Maximal Marginal Relevance）多样性重排
 // 在评分流水线阀值过滤之后、maxSize 截断之前执行，
 // 打散同一话题的高相似结果（转载站/镜像站/同源博客）。
-// 参考 docs/mmr-diversity-rerank.md。
 //
 //   MMR(r, S) = λ × relevance(r) − (1 − λ) × max_{s∈S} similarity(r, s)
 // ──────────────────────────────────────────────────────────────────────────────
