@@ -13,7 +13,7 @@ RUN go mod download
 # 复制源代码
 COPY . .
 # 构建二进制文件（静态链接，适用于alpine）
-RUN CGO_ENABLED=0 GOOS=linux go build -o websearch ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o websearch ./cmd/
 
 # 使用alpine作为运行阶段，创建更小的镜像
 FROM alpine:latest
@@ -26,9 +26,6 @@ WORKDIR /app/
 
 # 从构建阶段复制二进制文件
 COPY --from=builder /app/websearch .
-
-# 复制配置文件
-COPY --from=builder /app/config.yaml .
 
 # 暴露端口（根据main.go中的conf.Port）
 EXPOSE 8338
