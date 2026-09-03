@@ -1,5 +1,5 @@
 # 使用官方Golang镜像作为构建阶段
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # 设置工作目录
 WORKDIR /app
@@ -13,7 +13,7 @@ RUN go mod download
 # 复制源代码
 COPY . .
 # 构建二进制文件（静态链接，适用于alpine）
-RUN CGO_ENABLED=0 GOOS=linux go build  -o websearch ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o websearch ./cmd/main.go
 
 # 使用alpine作为运行阶段，创建更小的镜像
 FROM alpine:latest
